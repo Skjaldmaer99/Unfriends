@@ -5,6 +5,7 @@ import {
   advanceRound,
   beginSelection,
   createGame,
+  expireCurrentPhase,
   GameRuleError,
   type GameRuleErrorCode,
   getPlayerGameView,
@@ -232,5 +233,46 @@ describe("gameplay rules", () => {
       )?.score,
       0
     )
+  })
+
+  it("resolves expired answer and selection phases without stalling the game", () => {
+    const initialState = createThreePlayerGame()
+    assertRuleError(
+      () => expireCurrentPhase(initialState, 61_000),
+      "PHASE_NOT_EXPIRED"
+    )
+
+    const unansweredProtagonist = expireCurrentPhase(initialState, 62_000)
+    assert.equal(unansweredProtagonist.currentRound.phase, "round_result")
+    assert.deepEqual(
+      unansweredProtagonist.players.map((player) => player.score),
+      [0, 0, 0]
+    )
+
+    const withOriginal = submitProtagonistAnswer(
+      initialState,
+      "p1",
+      "Original",
+      2_000
+    )
+    const noGuesses = expireCurrentPhase(withOriginal, 62_001)
+    assert.equal(noGuesses.currentRound.phase, "round_result")
+    assert.equal(noGuesses.players[0].score, 1)
+
+    const withOneGuess = submitPlayerAnswer(
+      withOriginal,
+      "p2",
+      "Closest guess",
+      3_000
+    )
+    const partialReveal = expireCurrentPhase(withOneGuess, 62_001)
+    assert.equal(partialReveal.currentRound.phase, "reveal")
+    assert.equal(partialReveal.currentRound.answers.length, 1)
+
+    const selectionState = beginSelection(partialReveal, 63_000)
+    const timedOutSelection = expireCurrentPhase(selectionState, 93_001)
+    assert.equal(timedOutSelection.currentRound.phase, "round_result")
+    assert.equal(timedOutSelection.currentRound.selectedAnswerId, null)
+    assert.equal(timedOutSelection.players[0].score, 1)
   })
 })

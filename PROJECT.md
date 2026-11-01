@@ -10,8 +10,8 @@ Party game multiplayer per gruppi di amici: a ogni turno un protagonista rispond
 | ----------- | ----------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Frontend    | Next.js App Router, React, TypeScript                 | Presente (Next.js 16.4.3, React 19.3.1, TypeScript 5.9.3)                    |
 | UI          | Tailwind CSS 4, shadcn/ui, Lucide React               | Presente                                                                     |
-| API HTTP    | Next.js Route Handlers                                | API create/join/lobby/leave/start implementate                               |
-| Realtime    | Node.js, TypeScript, Socket.IO                        | Dipendenze configurate nel workspace `realtime-server/`                      |
+| API HTTP    | Next.js Route Handlers                                | API create/join/lobby/leave e ticket socket implementate                     |
+| Realtime    | Node.js, TypeScript, Socket.IO                        | Server indipendente con autenticazione, lobby e gameplay implementato        |
 | Validazione | Zod                                                   | Installato nell'app e nel workspace realtime                                 |
 | Persistenza | PostgreSQL, Drizzle ORM e Drizzle Kit                 | Schema, migrazione e seed implementati; applicazione richiede `DATABASE_URL` |
 | Test        | Da scegliere in Task 13 in base ai confini dei moduli | Da implementare                                                              |
@@ -55,8 +55,10 @@ hooks/               Hook React, incluso il collegamento al realtime
 lib/                 Database, sessioni, codici e servizi room
 realtime-server/
   src/
+    auth/            Ticket Socket.IO firmati
     game/            Modello del gameplay e test unitari
-    ...              Server Socket.IO, eventi, stanze e servizi
+    protocol.ts      Schemi e payload Socket.IO tipizzati
+    server.ts        Server Socket.IO, lobby e gameplay
 packages/shared/
   src/               Tipi e schemi condivisi tra frontend e realtime
 db/                  Schema Drizzle, migrazioni e seed
@@ -84,8 +86,8 @@ Le modalità aggiuntive, i profili, gli amici e le classifiche globali restano f
 | 1. Configurazione stack       | Completata              | Dipendenze installate; `realtime-server/` configurato come workspace npm separato. |
 | 2. Regole di gameplay         | Completata              | Motore puro: fasi, privacy delle viste, punteggio, timer, rotazione e test.        |
 | 3. Database e dati            | Completata              | Sei tabelle, vincoli relazionali, migrazione iniziale e 48 domande seed.           |
-| 4. Gestione stanze            | Completata              | API persistenti, cookie sessione, host handoff, lobby e avvio con almeno 3.        |
-| 5. Server Socket.IO           | Da iniziare             | Stato autorevole, eventi validati e privacy.                                       |
+| 4. Gestione stanze            | Completata              | API persistenti, cookie sessione, host handoff e lobby; avvio via Socket.IO.       |
+| 5. Server Socket.IO           | Completata              | Ticket firmati, eventi Zod, lobby, round, timeout, privacy e persistenza.          |
 | 6. Design system              | Da iniziare             | Estensione coerente dell'attuale base shadcn.                                      |
 | 7. Pagina home                | Da iniziare             | Creazione/accesso alla partita.                                                    |
 | 8. Lobby multiplayer          | Da iniziare             | Presenza e controlli host realtime.                                                |
@@ -120,7 +122,18 @@ npm run db:migrate
 npm run db:seed
 ```
 
-Per migrazioni e seed configura `DATABASE_URL` nell'ambiente, ad esempio verso un database locale `unfriends`. `db:generate` non richiede una connessione; `db:migrate` e `db:seed` sì. Non inserire credenziali reali nel repository.
+Per migrazioni, seed e flussi room/realtime configura `DATABASE_URL` verso PostgreSQL. `db:generate` non richiede una connessione; `db:migrate` e `db:seed` sì. Non inserire credenziali reali nel repository.
+
+Avvia il realtime server in un secondo terminale, con un segreto locale casuale condiviso con l'app Next:
+
+```bash
+export SOCKET_TICKET_SECRET="$(openssl rand -hex 32)"
+export SOCKET_ALLOWED_ORIGINS="http://localhost:3000"
+export SOCKET_PORT=4000
+npm run dev --workspace @unfriends/realtime-server
+```
+
+Configura lo stesso `SOCKET_TICKET_SECRET` anche per Next.js. In produzione, `SOCKET_ALLOWED_ORIGINS` deve elencare origini HTTPS precise separate da virgole; i wildcard sono rifiutati. L'endpoint `GET /api/rooms/[code]/socket-ticket` emette un ticket valido 60 secondi dopo aver verificato il cookie giocatore. Creazione e join stanza usano le API HTTP; avvio, presenza e gameplay usano Socket.IO.
 
 ## Decisioni e verifiche iniziali
 
@@ -131,6 +144,8 @@ Per migrazioni e seed configura `DATABASE_URL` nell'ambiente, ad esempio verso u
 - Task 2: il dominio in `realtime-server/src/game/` definisce le fasi del round, validazione di risposte, timer, risposte private/anonime nelle viste, selezione del protagonista, punteggio e rotazione deterministica. Cinque test coprono privacy, punteggio, due giocatori, rotazione, invii non validi e selezione tra risposte coincidenti.
 - Task 3: `db/schema.ts` definisce rooms, players, questions, rounds, answers e votes con vincoli per session hash, nickname/host, invii unici e voto del protagonista alla risposta dello stesso round. La migrazione `db/migrations/0000_romantic_dust.sql` è generata; `db/seed.ts` aggiunge 48 domande italiane in modo idempotente.
 - Limite verifica Task 3: generazione e coerenza delle migrazioni, typecheck e lint dei file DB passano. Non è stato possibile applicare migrazione o seed: PostgreSQL locale richiede autenticazione password e `DATABASE_URL` non è configurata.
-- Task 4: Route Handlers `POST /api/rooms`, `POST /api/rooms/[code]/join`, `GET /api/rooms/[code]`, `POST /api/rooms/[code]/leave` e `POST /api/rooms/[code]/start`; i servizi serializzano join/leave/start con lock di stanza, trasferiscono l'host e conservano i giocatori usciti durante la partita come disconnessi. I token sessione sono cookie `HttpOnly` e nel DB è salvato solo SHA-256. Lo start porta la room a `in_progress`; avvio della partita e notifiche realtime sono nella Task 5.
+- Task 4: Route Handlers `POST /api/rooms`, `POST /api/rooms/[code]/join`, `GET /api/rooms/[code]` e `POST /api/rooms/[code]/leave`; i servizi serializzano join/leave con lock di stanza, trasferiscono l'host e conservano i giocatori usciti durante la partita come disconnessi. I token sessione sono cookie `HttpOnly` e nel DB è salvato solo SHA-256. Lo start è ora solo Socket.IO, per evitare di impostare `in_progress` senza creare il round.
 - Limite verifica Task 4: test unitari, typecheck e build Next passano; i flussi con persistenza non sono stati esercitati end-to-end perché l'autenticazione del PostgreSQL locale non è configurata.
+- Task 5: server avviabile con `npm run dev --workspace @unfriends/realtime-server`, health check `/healthz`, CORS con allowlist esatta e trasporto WebSocket. Il ticket JWT è firmato, legato a player/stanza e dura 60 secondi; il middleware verifica membership nel DB. Il server valida payload con Zod, autorizza ogni evento tramite l'identità del ticket, gestisce lobby/ready/start/leave, round, risposte, voti, punteggi e timeout; scrive round/risposte/voti/punteggi in PostgreSQL e invia viste per giocatore per preservare la privacy.
+- Limite verifica Task 5: typecheck, build Next, lint e 14 test realtime passano. I test coprono ticket, payload, health, handshake invalido e scadenze; non è stato possibile testare un handshake autenticato o una partita completa perché PostgreSQL locale richiede una password corretta e `DATABASE_URL` non è disponibile. Lo stato attivo è in memoria per istanza: un riavvio del processo non ripristina ancora una partita in corso; il recupero è da completare nella Task 11.
 - Verifica: `npm run typecheck` passa; `npm run lint` termina senza errori ma segnala un warning preesistente per l'import `Geist` non utilizzato in `app/layout.tsx`. `npm install` ha riportato vulnerabilità nel dependency tree, da valutare senza aggiornamenti automatici non revisionati.

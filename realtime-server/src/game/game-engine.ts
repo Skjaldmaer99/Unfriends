@@ -25,6 +25,7 @@ export type GameRuleErrorCode =
   | "ANSWER_ALREADY_SUBMITTED"
   | "INVALID_ANSWER"
   | "ANSWER_EXPIRED"
+  | "PHASE_NOT_EXPIRED"
   | "ANSWER_NOT_FOUND"
 
 export class GameRuleError extends Error {
@@ -227,6 +228,54 @@ export function beginSelection(state: GameState, now = Date.now()): GameState {
       phase: "protagonist_selection",
       deadlineAt: now + state.settings.selectionTimeLimitSeconds * 1000,
     },
+  }
+}
+
+export function expireCurrentPhase(
+  state: GameState,
+  now = Date.now()
+): GameState {
+  ensureActive(state)
+  assertTimestamp(now)
+
+  const round = state.currentRound
+  if (
+    round.deadlineAt === null ||
+    now <= round.deadlineAt ||
+    (round.phase !== "protagonist_answer" &&
+      round.phase !== "players_answer" &&
+      round.phase !== "protagonist_selection")
+  ) {
+    throw new GameRuleError(
+      "PHASE_NOT_EXPIRED",
+      "The current phase has not expired."
+    )
+  }
+
+  if (round.phase === "protagonist_answer") {
+    return {
+      ...state,
+      currentRound: { ...round, phase: "round_result", deadlineAt: null },
+    }
+  }
+
+  if (round.phase === "players_answer" && round.answers.length > 0) {
+    return {
+      ...state,
+      currentRound: { ...round, phase: "reveal", deadlineAt: null },
+    }
+  }
+
+  const players = state.players.map((player) =>
+    player.id === round.protagonistId
+      ? { ...player, score: player.score + 1 }
+      : player
+  )
+
+  return {
+    ...state,
+    players,
+    currentRound: { ...round, phase: "round_result", deadlineAt: null },
   }
 }
 

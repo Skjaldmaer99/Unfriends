@@ -243,6 +243,20 @@ export async function leaveRoom(
   code: string,
   sessionTokenHash: string
 ): Promise<{ roomClosed: boolean }> {
+  return leaveRoomByIdentity(code, { sessionTokenHash })
+}
+
+export async function leaveRoomForPlayer(
+  code: string,
+  playerId: string
+): Promise<{ roomClosed: boolean }> {
+  return leaveRoomByIdentity(code, { playerId })
+}
+
+async function leaveRoomByIdentity(
+  code: string,
+  identity: { sessionTokenHash: string } | { playerId: string }
+): Promise<{ roomClosed: boolean }> {
   const database = getDatabase()
 
   return database.transaction(async (transaction) => {
@@ -260,10 +274,7 @@ export async function leaveRoom(
       .select()
       .from(players)
       .where(
-        and(
-          eq(players.roomId, room.id),
-          eq(players.sessionTokenHash, sessionTokenHash)
-        )
+        and(eq(players.roomId, room.id), playerIdentityCondition(identity))
       )
       .limit(1)
 
@@ -309,75 +320,12 @@ export async function leaveRoom(
   })
 }
 
-export async function startRoom(
-  code: string,
-  sessionTokenHash: string
-): Promise<void> {
-  const database = getDatabase()
-
-  await database.transaction(async (transaction) => {
-    const [room] = await transaction
-      .select()
-      .from(rooms)
-      .where(eq(rooms.code, code))
-      .for("update")
-
-    if (!room) {
-      throw new RoomServiceError("ROOM_NOT_FOUND", "Room code was not found.")
-    }
-    if (room.status !== "waiting") {
-      throw new RoomServiceError(
-        "ROOM_UNAVAILABLE",
-        "This room has already started."
-      )
-    }
-
-    const [host] = await transaction
-      .select({ id: players.id, isHost: players.isHost })
-      .from(players)
-      .where(
-        and(
-          eq(players.roomId, room.id),
-          eq(players.sessionTokenHash, sessionTokenHash)
-        )
-      )
-      .limit(1)
-
-    if (!host) {
-      throw new RoomServiceError(
-        "UNAUTHORIZED",
-        "Player session does not belong to this room."
-      )
-    }
-    if (!host.isHost) {
-      throw new RoomServiceError(
-        "HOST_REQUIRED",
-        "Only the host can start the game."
-      )
-    }
-
-    const [connectedCount] = await transaction
-      .select({ value: count() })
-      .from(players)
-      .where(
-        and(
-          eq(players.roomId, room.id),
-          eq(players.connectionStatus, "connected")
-        )
-      )
-
-    if (Number(connectedCount.value) < 3) {
-      throw new RoomServiceError(
-        "TOO_FEW_PLAYERS",
-        "At least three connected players are required to start."
-      )
-    }
-
-    await transaction
-      .update(rooms)
-      .set({ status: "in_progress", updatedAt: new Date() })
-      .where(eq(rooms.id, room.id))
-  })
+function playerIdentityCondition(
+  identity: { sessionTokenHash: string } | { playerId: string }
+) {
+  return "playerId" in identity
+    ? eq(players.id, identity.playerId)
+    : eq(players.sessionTokenHash, identity.sessionTokenHash)
 }
 
 function isUniqueConstraint(error: unknown, constraint: string): boolean {
