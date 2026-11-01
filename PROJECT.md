@@ -6,15 +6,15 @@ Party game multiplayer per gruppi di amici: a ogni turno un protagonista rispond
 
 ## Stack tecnologico
 
-| Area        | Scelta                                                | Stato nel repository                                        |
-| ----------- | ----------------------------------------------------- | ----------------------------------------------------------- |
-| Frontend    | Next.js App Router, React, TypeScript                 | Presente (Next.js 16.4.3, React 19.3.1, TypeScript 5.9.3)   |
-| UI          | Tailwind CSS 4, shadcn/ui, Lucide React               | Presente                                                    |
-| API HTTP    | Next.js Route Handlers                                | Next.js presente; endpoint da implementare                  |
-| Realtime    | Node.js, TypeScript, Socket.IO                        | Dipendenze configurate nel workspace `realtime-server/`     |
-| Validazione | Zod                                                   | Installato nell'app e nel workspace realtime                |
-| Persistenza | PostgreSQL, Drizzle ORM e Drizzle Kit                 | Dipendenze installate; schema e connessione da implementare |
-| Test        | Da scegliere in Task 13 in base ai confini dei moduli | Da implementare                                             |
+| Area        | Scelta                                                | Stato nel repository                                                         |
+| ----------- | ----------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Frontend    | Next.js App Router, React, TypeScript                 | Presente (Next.js 16.4.3, React 19.3.1, TypeScript 5.9.3)                    |
+| UI          | Tailwind CSS 4, shadcn/ui, Lucide React               | Presente                                                                     |
+| API HTTP    | Next.js Route Handlers                                | Next.js presente; endpoint da implementare                                   |
+| Realtime    | Node.js, TypeScript, Socket.IO                        | Dipendenze configurate nel workspace `realtime-server/`                      |
+| Validazione | Zod                                                   | Installato nell'app e nel workspace realtime                                 |
+| Persistenza | PostgreSQL, Drizzle ORM e Drizzle Kit                 | Schema, migrazione e seed implementati; applicazione richiede `DATABASE_URL` |
+| Test        | Da scegliere in Task 13 in base ai confini dei moduli | Da implementare                                                              |
 
 Il progetto esistente è un'app Next.js alla radice del repository, non un monorepo. Per l'MVP manterremo questa app alla radice e aggiungeremo un servizio `realtime-server/`; estrarre il frontend in `frontend/` non offre un vantaggio immediato e comporterebbe spostamenti non necessari. I contratti condivisi saranno isolati in `packages/shared/` quando verranno introdotti.
 
@@ -82,7 +82,7 @@ Le modalità aggiuntive, i profili, gli amici e le classifiche globali restano f
 | 0. Analisi e organizzazione   | Completata              | Repository e dipendenze verificati; architettura e questo documento definiti.      |
 | 1. Configurazione stack       | Completata              | Dipendenze installate; `realtime-server/` configurato come workspace npm separato. |
 | 2. Regole di gameplay         | Completata              | Motore puro: fasi, privacy delle viste, punteggio, timer, rotazione e test.        |
-| 3. Database e dati            | Da iniziare             | Schema, migrazioni e seed.                                                         |
+| 3. Database e dati            | Completata              | Sei tabelle, vincoli relazionali, migrazione iniziale e 48 domande seed.           |
 | 4. Gestione stanze            | Da iniziare             | Creazione, ingresso, uscita e lobby.                                               |
 | 5. Server Socket.IO           | Da iniziare             | Stato autorevole, eventi validati e privacy.                                       |
 | 6. Design system              | Da iniziare             | Estensione coerente dell'attuale base shadcn.                                      |
@@ -98,7 +98,7 @@ Le modalità aggiuntive, i profili, gli amici e le classifiche globali restano f
 
 ## Avvio locale
 
-Prerequisiti attuali: Node.js compatibile con Next.js 16 e npm.
+Prerequisiti: Node.js compatibile con Next.js 16, npm e PostgreSQL per migrazioni/seed. L'app web attuale continua ad avviarsi senza database.
 
 ```bash
 npm install
@@ -113,9 +113,12 @@ npm run lint
 npm run build
 npm test --workspace @unfriends/realtime-server
 npm run typecheck --workspace @unfriends/realtime-server
+npm run db:generate
+npm run db:migrate
+npm run db:seed
 ```
 
-Il template attuale non richiede variabili d'ambiente per partire. Le istruzioni per PostgreSQL, migrazioni, seed e server realtime verranno aggiunte quando saranno implementati i rispettivi servizi; nessuna credenziale reale va inserita nel repository.
+Per migrazioni e seed configura `DATABASE_URL` nell'ambiente, ad esempio verso un database locale `unfriends`. `db:generate` non richiede una connessione; `db:migrate` e `db:seed` sì. Non inserire credenziali reali nel repository.
 
 ## Decisioni e verifiche iniziali
 
@@ -124,4 +127,6 @@ Il template attuale non richiede variabili d'ambiente per partire. Le istruzioni
 - Il repository contiene già Tailwind CSS 4, shadcn/ui, Lucide React, `next-themes` e React Aria Components.
 - Configurazione Task 1: installati `socket.io`, `socket.io-client`, `zod`, `drizzle-orm`, `drizzle-kit`, `pg` e `@types/pg`; il package `realtime-server/` dichiara le proprie dipendenze runtime.
 - Task 2: il dominio in `realtime-server/src/game/` definisce le fasi del round, validazione di risposte, timer, risposte private/anonime nelle viste, selezione del protagonista, punteggio e rotazione deterministica. Cinque test coprono privacy, punteggio, due giocatori, rotazione, invii non validi e selezione tra risposte coincidenti.
+- Task 3: `db/schema.ts` definisce rooms, players, questions, rounds, answers e votes con vincoli per session hash, nickname/host, invii unici e voto del protagonista alla risposta dello stesso round. La migrazione `db/migrations/0000_romantic_dust.sql` è generata; `db/seed.ts` aggiunge 48 domande italiane in modo idempotente.
+- Limite verifica Task 3: generazione e coerenza delle migrazioni, typecheck e lint dei file DB passano. Non è stato possibile applicare migrazione o seed: PostgreSQL locale richiede autenticazione password e `DATABASE_URL` non è configurata.
 - Verifica: `npm run typecheck` passa; `npm run lint` termina senza errori ma segnala un warning preesistente per l'import `Geist` non utilizzato in `app/layout.tsx`. `npm install` ha riportato vulnerabilità nel dependency tree, da valutare senza aggiornamenti automatici non revisionati.

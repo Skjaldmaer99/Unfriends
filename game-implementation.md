@@ -14,7 +14,7 @@ L'obiettivo principale è creare un'esperienza divertente, immediata, intuitiva 
 - [x] Task 0 – Analisi del progetto e organizzazione
 - [x] Task 1 – Configurazione dello stack tecnologico
 - [x] Task 2 – Definizione del gameplay
-- [ ] Task 3 – Database e modellazione dei dati
+- [x] Task 3 – Database e modellazione dei dati
 - [ ] Task 4 – Sistema di gestione delle stanze
 - [ ] Task 5 – Server realtime con Socket.IO
 - [ ] Task 6 – Design system e interfaccia
