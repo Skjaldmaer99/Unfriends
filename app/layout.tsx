@@ -1,17 +1,22 @@
-import { Geist, Geist_Mono, Inter, Raleway } from "next/font/google"
+import type { Metadata } from "next"
+import { Inter, Raleway } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
-import { cn } from "@/lib/utils";
+import { Toaster } from "@/components/ui/sonner"
+import { cn } from "@/lib/utils"
 
-const ralewayHeading = Raleway({subsets:['latin'],variable:'--font-heading'});
-
-const inter = Inter({subsets:['latin'],variable:'--font-sans'})
-
-const fontMono = Geist_Mono({
+const ralewayHeading = Raleway({
   subsets: ["latin"],
-  variable: "--font-mono",
+  variable: "--font-heading",
 })
+
+const inter = Inter({ subsets: ["latin"], variable: "--font-body" })
+
+export const metadata: Metadata = {
+  title: "Chi mi conosce davvero?",
+  description: "Un party game per scoprire chi conosce meglio il gruppo.",
+}
 
 export default function RootLayout({
   children,
@@ -20,12 +25,20 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="it"
       suppressHydrationWarning
-      className={cn("antialiased", fontMono.variable, "font-sans", inter.variable, ralewayHeading.variable)}
+      className={cn(
+        "antialiased",
+        "font-sans",
+        inter.variable,
+        ralewayHeading.variable
+      )}
     >
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          {children}
+          <Toaster />
+        </ThemeProvider>
       </body>
     </html>
   )

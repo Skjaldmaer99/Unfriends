@@ -9,7 +9,7 @@ Party game multiplayer per gruppi di amici: a ogni turno un protagonista rispond
 | Area        | Scelta                                                | Stato nel repository                                                         |
 | ----------- | ----------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Frontend    | Next.js App Router, React, TypeScript                 | Presente (Next.js 16.4.3, React 19.3.1, TypeScript 5.9.3)                    |
-| UI          | Tailwind CSS 4, shadcn/ui, Lucide React               | Presente                                                                     |
+| UI          | Tailwind CSS 4, shadcn/ui, React Aria, Lucide, Sonner | Palette e primitive responsive implementate                                  |
 | API HTTP    | Next.js Route Handlers                                | API create/join/lobby/leave e ticket socket implementate                     |
 | Realtime    | Node.js, TypeScript, Socket.IO                        | Server indipendente con autenticazione, lobby e gameplay implementato        |
 | Validazione | Zod                                                   | Installato nell'app e nel workspace realtime                                 |
@@ -47,7 +47,8 @@ public/              Asset statici
 app/                 Frontend Next.js e Route Handlers
   api/rooms/         Creazione e gestione HTTP delle stanze
 components/
-  ui/                Primitive UI
+  ui/                Button, input, dialog, avatar, badge, card, toast, timer,
+                     progress, player card, score badge e loading state
   lobby/             Componenti della lobby
   game/              Componenti della partita
   shared/            Componenti condivisi
@@ -88,7 +89,7 @@ Le modalità aggiuntive, i profili, gli amici e le classifiche globali restano f
 | 3. Database e dati            | Completata              | Sei tabelle, vincoli relazionali, migrazione iniziale e 48 domande seed.           |
 | 4. Gestione stanze            | Completata              | API persistenti, cookie sessione, host handoff e lobby; avvio via Socket.IO.       |
 | 5. Server Socket.IO           | Completata              | Ticket firmati, eventi Zod, lobby, round, timeout, privacy e persistenza.          |
-| 6. Design system              | Da iniziare             | Estensione coerente dell'attuale base shadcn.                                      |
+| 6. Design system              | Completata              | Token multi-tono, font dedicati, primitive accessibili e target touch da 44px.     |
 | 7. Pagina home                | Da iniziare             | Creazione/accesso alla partita.                                                    |
 | 8. Lobby multiplayer          | Da iniziare             | Presenza e controlli host realtime.                                                |
 | 9. Partita                    | Da iniziare             | Flusso completo dei round.                                                         |
@@ -122,7 +123,13 @@ npm run db:migrate
 npm run db:seed
 ```
 
-Per migrazioni, seed e flussi room/realtime configura `DATABASE_URL` verso PostgreSQL. `db:generate` non richiede una connessione; `db:migrate` e `db:seed` sì. Non inserire credenziali reali nel repository.
+Per migrazioni, seed e flussi room/realtime crea `.env.local` copiando `.env.example`, poi sostituisci il placeholder con la URL PostgreSQL corretta. Esempio locale:
+
+```env
+DATABASE_URL=postgres://utente:password@localhost:5432/unfriends
+```
+
+Verifica host, porta, nome database, utente e password del tuo server; Drizzle Kit usa `5432` come porta PostgreSQL predefinita, ma può essere diversa nella tua installazione. `.env.local` è ignorato da Git. `db:generate` non richiede una connessione; `db:migrate`, `db:seed`, le API room e il server realtime sì. Non inserire credenziali reali nel repository.
 
 Avvia il realtime server in un secondo terminale, con un segreto locale casuale condiviso con l'app Next:
 
@@ -148,4 +155,6 @@ Configura lo stesso `SOCKET_TICKET_SECRET` anche per Next.js. In produzione, `SO
 - Limite verifica Task 4: test unitari, typecheck e build Next passano; i flussi con persistenza non sono stati esercitati end-to-end perché l'autenticazione del PostgreSQL locale non è configurata.
 - Task 5: server avviabile con `npm run dev --workspace @unfriends/realtime-server`, health check `/healthz`, CORS con allowlist esatta e trasporto WebSocket. Il ticket JWT è firmato, legato a player/stanza e dura 60 secondi; il middleware verifica membership nel DB. Il server valida payload con Zod, autorizza ogni evento tramite l'identità del ticket, gestisce lobby/ready/start/leave, round, risposte, voti, punteggi e timeout; scrive round/risposte/voti/punteggi in PostgreSQL e invia viste per giocatore per preservare la privacy.
 - Limite verifica Task 5: typecheck, build Next, lint e 14 test realtime passano. I test coprono ticket, payload, health, handshake invalido e scadenze; non è stato possibile testare un handshake autenticato o una partita completa perché PostgreSQL locale richiede una password corretta e `DATABASE_URL` non è disponibile. Lo stato attivo è in memoria per istanza: un riavvio del processo non ripristina ancora una partita in corso; il recupero è da completare nella Task 11.
-- Verifica: `npm run typecheck` passa; `npm run lint` termina senza errori ma segnala un warning preesistente per l'import `Geist` non utilizzato in `app/layout.tsx`. `npm install` ha riportato vulnerabilità nel dependency tree, da valutare senza aggiornamenti automatici non revisionati.
+- Task 6: palette OKLCH corallo/teal/giallo con modalità chiara/scura e texture leggera, font Raleway/Inter con mapping Tailwind corretto, lingua e metadata italiani. Primitive condivise in `components/ui/`: button, input, badge, card, avatar, dialog React Aria, toast Sonner, progress, timer, player card, score badge e loading state; i pulsanti principali hanno target touch da 44px e le animazioni rispettano `prefers-reduced-motion`.
+- Verifica Task 6: `npm run typecheck`, `npm run build`, `npm run lint`, 14 test realtime, 7 test room, Prettier e `git diff --check` passano.
+- Nota dipendenze: `npm install` ha riportato vulnerabilità nel dependency tree, da valutare senza aggiornamenti automatici non revisionati.
