@@ -10,7 +10,7 @@
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
-    "test:rooms": "tsx --test lib/room-code.test.ts lib/room-input.test.ts lib/player-session.test.ts",
+    "test:rooms": "tsx --test lib/room-code.test.ts lib/room-input.test.ts lib/player-session.test.ts lib/fixed-window-rate-limiter.test.ts lib/room-http.test.ts",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config=drizzle.config.ts",
     "db:seed": "tsx db/seed.ts"

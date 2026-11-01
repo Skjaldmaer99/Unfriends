@@ -90,6 +90,7 @@ function errorMessage(error: EventFailure): string {
     HOST_REQUIRED: "Solo l'host può effettuare questa azione.",
     ROOM_UNAVAILABLE: "La stanza non è più in attesa di giocatori.",
     ROOM_NOT_FOUND: "La stanza non esiste più.",
+    RATE_LIMITED: "Hai fatto troppe azioni. Attendi qualche secondo.",
   }
   return messages[error.code] ?? error.error
 }

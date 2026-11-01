@@ -25,6 +25,12 @@ describe("realtime event schemas", () => {
       }).success,
       false
     )
+    assert.equal(
+      clientEventSchemas["answer:submit"].safeParse({
+        content: "unsafe\u0000value",
+      }).success,
+      false
+    )
   })
 
   it("accepts only scoped socket ticket claims", () => {
@@ -65,6 +71,16 @@ describe("realtime event schemas", () => {
         },
       }).success,
       true
+    )
+    assert.equal(
+      clientEventSchemas["room:settings"].safeParse({
+        settings: {
+          ...defaults,
+          enabledCategories: ["friendship"],
+          unexpected: true,
+        },
+      }).success,
+      false
     )
   })
 

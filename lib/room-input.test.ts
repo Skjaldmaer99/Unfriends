@@ -29,6 +29,15 @@ describe("room request validation", () => {
         .success,
       false
     )
+    assert.equal(
+      PlayerIdentitySchema.safeParse({ nickname: "Ada\nHost" }).success,
+      false
+    )
+    assert.equal(
+      PlayerIdentitySchema.safeParse({ nickname: "Ada", playerId: "forged" })
+        .success,
+      false
+    )
   })
 
   it("normalizes room codes and rejects ambiguous characters", () => {

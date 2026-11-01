@@ -13,15 +13,17 @@ export const QUESTION_CATEGORIES = [
 
 export const QuestionCategorySchema = z.enum(QUESTION_CATEGORIES)
 
-export const GameSettingsSchema = z.object({
-  roundsPerPlayer: z.number().int().min(1).max(5).default(1),
-  answerTimeLimitSeconds: z.number().int().min(10).max(300).default(60),
-  selectionTimeLimitSeconds: z.number().int().min(5).max(120).default(30),
-  enabledCategories: z
-    .array(QuestionCategorySchema)
-    .min(1)
-    .default([...QUESTION_CATEGORIES]),
-})
+export const GameSettingsSchema = z
+  .object({
+    roundsPerPlayer: z.number().int().min(1).max(5).default(1),
+    answerTimeLimitSeconds: z.number().int().min(10).max(300).default(60),
+    selectionTimeLimitSeconds: z.number().int().min(5).max(120).default(30),
+    enabledCategories: z
+      .array(QuestionCategorySchema)
+      .min(1)
+      .default([...QUESTION_CATEGORIES]),
+  })
+  .strict()
 
 export const GameQuestionSchema = z.object({
   id: z.string().min(1),

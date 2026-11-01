@@ -15,6 +15,7 @@ import {
   votes,
 } from "../../db/schema"
 import { getDatabase } from "../../lib/database"
+import { createFixedWindowRateLimiter } from "../../lib/fixed-window-rate-limiter.js"
 import { leaveRoomForPlayer, RoomServiceError } from "../../lib/room-service"
 import {
   assertSocketTicketConfiguration,
@@ -74,6 +75,14 @@ const roomActionQueues = new Map<string, Promise<void>>()
 const readyPlayers = new Map<string, Map<string, boolean>>()
 const revealTimers = new Map<string, NodeJS.Timeout>()
 const phaseTimers = new Map<string, NodeJS.Timeout>()
+const socketHandshakeRateLimiter = createFixedWindowRateLimiter({
+  limit: 60,
+  windowMs: 60_000,
+})
+const socketActionRateLimiter = createFixedWindowRateLimiter({
+  limit: 30,
+  windowMs: 10_000,
+})
 
 export function createRealtimeServer(options: RealtimeServerOptions = {}): {
   httpServer: HttpServer
@@ -118,6 +127,19 @@ export function createRealtimeServer(options: RealtimeServerOptions = {}): {
 
   io.use(async (socket, next) => {
     try {
+      const handshakeLimit = socketHandshakeRateLimiter.consume(
+        socket.handshake.address
+      )
+      if (!handshakeLimit.allowed) {
+        next(
+          socketAuthError(
+            "RATE_LIMITED",
+            `Too many connection attempts. Retry in ${handshakeLimit.retryAfterSeconds} seconds.`
+          )
+        )
+        return
+      }
+
       const ticket = socket.handshake.auth.ticket
       if (typeof ticket !== "string") {
         next(
@@ -1420,6 +1442,20 @@ async function runAction<T>(
   action: () => Promise<T>
 ): Promise<void> {
   const roomCode = socket.data.roomCode
+  const rateLimit = socketActionRateLimiter.consume(
+    `${roomCode}:${socket.data.playerId}`
+  )
+  if (!rateLimit.allowed) {
+    const failure: EventFailure = {
+      ok: false,
+      code: "RATE_LIMITED",
+      error: `Hai effettuato troppe azioni. Riprova tra ${rateLimit.retryAfterSeconds} secondi.`,
+    }
+    socket.emit("room:error", failure)
+    if (typeof ack === "function") ack(failure)
+    return
+  }
+
   const previous = roomActionQueues.get(roomCode) ?? Promise.resolve()
   const current = previous.then(async () => {
     try {

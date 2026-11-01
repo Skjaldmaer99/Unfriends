@@ -14,7 +14,14 @@ export const clientEventSchemas = {
   "room:settings": z.object({ settings: GameSettingsSchema }).strict(),
   "player:ready": z.object({ ready: z.boolean() }).strict(),
   "answer:submit": z
-    .object({ content: z.string().trim().min(1).max(240) })
+    .object({
+      content: z
+        .string()
+        .trim()
+        .min(1)
+        .max(240)
+        .refine((content) => !content.includes("\u0000")),
+    })
     .strict(),
   "answer:select": z.object({ answerId: z.string().min(1).max(128) }).strict(),
   "round:next": z.object({}).strict(),

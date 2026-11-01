@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 
+import { createFixedWindowRateLimiter } from "@/lib/fixed-window-rate-limiter"
 import { JoinRoomSchema } from "@/lib/room-input"
 import {
   createPlayerSessionToken,
@@ -8,6 +9,8 @@ import {
 } from "@/lib/player-session"
 import {
   invalidRequest,
+  getRequestRateLimitKey,
+  rateLimitedResponse,
   readJsonBody,
   roomErrorResponse,
 } from "@/lib/room-http"
@@ -15,13 +18,28 @@ import { joinRoom } from "@/lib/room-service"
 
 export const runtime = "nodejs"
 
+const roomJoinRateLimiter = createFixedWindowRateLimiter({
+  limit: 20,
+  windowMs: 60 * 1000,
+})
+
 interface JoinRoomRouteContext {
   params: Promise<{ code: string }>
 }
 
 export async function POST(request: Request, context: JoinRoomRouteContext) {
   const { code } = await context.params
-  const body = await readJsonBody(request)
+  const rateLimit = roomJoinRateLimiter.consume(getRequestRateLimitKey(request))
+  if (!rateLimit.allowed) {
+    return rateLimitedResponse(rateLimit.retryAfterSeconds)
+  }
+
+  let body: unknown
+  try {
+    body = await readJsonBody(request)
+  } catch (error) {
+    return roomErrorResponse(error)
+  }
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return invalidRequest("Player details must be sent as a JSON object.")
   }

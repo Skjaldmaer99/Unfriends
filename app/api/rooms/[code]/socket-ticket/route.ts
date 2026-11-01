@@ -4,12 +4,22 @@ import {
   createSocketTicket,
   SocketTicketConfigurationError,
 } from "@/realtime-server/src/auth/socket-ticket"
+import { createFixedWindowRateLimiter } from "@/lib/fixed-window-rate-limiter"
 import { RoomCodeSchema } from "@/lib/room-input"
 import { getPlayerSessionHash } from "@/lib/player-session"
-import { invalidRequest, roomErrorResponse } from "@/lib/room-http"
+import {
+  invalidRequest,
+  rateLimitedResponse,
+  roomErrorResponse,
+} from "@/lib/room-http"
 import { getRoomLobby } from "@/lib/room-service"
 
 export const runtime = "nodejs"
+
+const socketTicketRateLimiter = createFixedWindowRateLimiter({
+  limit: 30,
+  windowMs: 60 * 1000,
+})
 
 interface SocketTicketRouteContext {
   params: Promise<{ code: string }>
@@ -31,6 +41,13 @@ export async function GET(
       { error: "A player session is required." },
       { status: 401 }
     )
+  }
+
+  const rateLimit = socketTicketRateLimiter.consume(
+    `session:${sessionTokenHash}`
+  )
+  if (!rateLimit.allowed) {
+    return rateLimitedResponse(rateLimit.retryAfterSeconds)
   }
 
   try {
