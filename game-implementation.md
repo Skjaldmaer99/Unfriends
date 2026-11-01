@@ -24,7 +24,7 @@ L'obiettivo principale è creare un'esperienza divertente, immediata, intuitiva 
 - [x] Task 10 – Classifica e fine partita
 - [x] Task 11 – Gestione dello stato e dei dati
 - [x] Task 12 – Sicurezza e validazione
-- [ ] Task 13 – Testing
+- [x] Task 13 – Testing
 - [ ] Task 14 – Deployment
 
 La Task 15 è esplicitamente fuori dall'MVP e non va implementata in questa fase.

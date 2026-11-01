@@ -100,7 +100,7 @@ Le modalità aggiuntive, i profili, gli amici e le classifiche globali restano f
 | 10. Classifica e fine partita | Completata              | Riepilogo, statistiche, riconoscimenti, classifica e replay host-only.             |
 | 11. Stato e sessioni          | Completata              | Snapshot persistente, recovery Socket.IO e sessioni recuperabili.                  |
 | 12. Sicurezza e validazione   | Completata              | Zod strict, body cap, autorizzazioni e rate limit HTTP/realtime.                   |
-| 13. Testing                   | Da iniziare             | Test unitari, realtime e partita completa.                                         |
+| 13. Testing                   | Completata              | Suite aggregata, copertura unit/HTTP e partita realtime integrale con reconnect.   |
 | 14. Deployment                | Da iniziare             | Vercel, Render e PostgreSQL.                                                       |
 | 15. Funzionalità future       | Non pianificata per MVP | Architettura estendibile senza implementare queste feature ora.                    |
 
@@ -119,6 +119,7 @@ Apri `http://localhost:3000`. Per i controlli disponibili:
 npm run typecheck
 npm run lint
 npm run build
+npm test
 npm run test:rooms
 npm test --workspace @unfriends/realtime-server
 npm run typecheck --workspace @unfriends/realtime-server
@@ -126,6 +127,8 @@ npm run db:generate
 npm run db:migrate
 npm run db:seed
 ```
+
+`npm test` esegue le suite room/HTTP e realtime. Il test di integrazione realtime crea una stanza PostgreSQL temporanea, simula 3 giocatori per tutti i round e verifica privacy, permessi, punteggi, summary e reconnect; ripulisce i dati al termine. Carica `.env.local` e viene saltato se `DATABASE_URL` non è configurato.
 
 Per migrazioni, seed e flussi room/realtime crea `.env.local` copiando `.env.example`, poi sostituisci il placeholder con la URL PostgreSQL corretta. Esempio locale:
 
@@ -173,4 +176,6 @@ Configura lo stesso `SOCKET_TICKET_SECRET` anche per Next.js. In produzione, `SO
 - Verifica Task 11: migrazione locale applicata; schema snapshot coperto da test valido/invalido. E2E con 3 sessioni autenticate: server riavviato in `players_answer`, viste recuperate con risposta originale visibile solo al protagonista, risposte guest inviate in parallelo, reveal anonimo e voto/punteggi completati usando gli ID ripristinati; stanza e processi di test rimossi. Build, lint, typecheck app/server, 20 test realtime, 7 test room, Prettier e `git diff --check` passano. Limite residuo: recovery e timer sono per singola istanza, senza coordinamento multi-istanza distribuito.
 - Task 12: payload create/join e settings validati con Zod strict; nickname rifiuta caratteri di controllo, risposte rifiutano NUL e restano renderizzate come testo React escaped. I body JSON di create/join sono letti in streaming e limitati a 8 KiB (413). Limiti process-local: creazione stanza 6/10 min per indirizzo, join 20/min per indirizzo, ticket realtime 30/min per sessione, handshake Socket.IO 60/min per IP e azioni Socket.IO 30/10 s per giocatore; gli eventi eccedenti ricevono 429 o `RATE_LIMITED` con indicazione di retry. Permessi, identità da ticket e transizioni server-authoritative restano invariati.
 - Verifica Task 12: test deterministici del fixed-window limiter, chiavi proxy, 413 per body oversize, 429/`Retry-After`, nickname e payload annidati sconosciuti. Passano lint, build, typecheck app/server, 13 test room/HTTP, 20 realtime, Prettier e `git diff --check`. Limite residuo: i contatori sono in memoria per processo; deployment serverless o multi-istanza richiederà uno store condiviso o rate limiting all'edge. La chiave IP HTTP si basa sugli header forwarded configurati dal proxy.
+- Task 13: aggiunto `npm test` come comando aggregato. Le suite coprono funzioni pure (motore, scoring, rotazione, summary, rate limiter, sessioni e validazione HTTP), route helper (body cap/errori) e server Socket.IO autenticato. Il test d'integrazione usa `createRoom`/`joinRoom` e PostgreSQL, avvia una partita completa a 3 giocatori, prova host authorization, privacy originale/autori durante reveal e visibilità al risultato, reconnect con risposta già inviata, punteggi, game summary e stato persistito `finished`; pulisce room e pool.
+- Verifica Task 13: `npm test` passa con 13 test room/HTTP e 21 test realtime, senza skip nell'ambiente locale con PostgreSQL. Passano inoltre lint senza warning, typecheck app/server, build Next, Prettier e `git diff --check`. In ambienti senza `DATABASE_URL`, il solo test d'integrazione PostgreSQL viene saltato; le altre suite restano autonome.
 - Nota dipendenze: `npm install` ha riportato vulnerabilità nel dependency tree, da valutare senza aggiornamenti automatici non revisionati.

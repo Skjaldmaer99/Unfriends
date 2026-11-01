@@ -39,3 +39,11 @@ export function getDatabase(): ApplicationDatabase {
 
   return databaseGlobals.__unfriendsDatabase
 }
+
+export async function closeDatabase(): Promise<void> {
+  if (databaseGlobals.__unfriendsPool) {
+    await databaseGlobals.__unfriendsPool.end()
+    delete databaseGlobals.__unfriendsPool
+    delete databaseGlobals.__unfriendsDatabase
+  }
+}
