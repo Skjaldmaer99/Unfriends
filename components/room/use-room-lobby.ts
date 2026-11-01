@@ -7,6 +7,7 @@ import { z } from "zod"
 import {
   GameSettingsSchema,
   type GameSettings,
+  type PlayerGameView,
 } from "@/realtime-server/src/game/types"
 import type {
   ClientToServerEvents,
@@ -46,6 +47,16 @@ interface LobbyState {
   isStarting: boolean
   isLeaving: boolean
   gameStarted: boolean
+  gameView: PlayerGameView | null
+  answerPhase: {
+    phase: "protagonist_answer" | "players_answer" | "protagonist_selection"
+    answerCount: number
+    requiredAnswerCount: number
+    deadlineAt: number | null
+  } | null
+  isSubmittingAnswer: boolean
+  isSelectingAnswer: boolean
+  isAdvancingRound: boolean
   error: string
   actionError: string
 }
@@ -59,6 +70,11 @@ const initialState: LobbyState = {
   isStarting: false,
   isLeaving: false,
   gameStarted: false,
+  gameView: null,
+  answerPhase: null,
+  isSubmittingAnswer: false,
+  isSelectingAnswer: false,
+  isAdvancingRound: false,
   error: "",
   actionError: "",
 }
@@ -223,8 +239,123 @@ export function useRoomLobby(code: string) {
               actionError: errorMessage(serverError),
             }))
         })
-        activeSocket.on("game:started", () => {
-          if (active) setState((current) => ({ ...current, gameStarted: true }))
+        activeSocket.on("game:started", (view) => {
+          if (active) {
+            setState((current) => ({
+              ...current,
+              gameStarted: true,
+              gameView: view,
+              answerPhase: {
+                phase: view.currentRound.phase as
+                  | "protagonist_answer"
+                  | "players_answer"
+                  | "protagonist_selection",
+                answerCount: view.currentRound.answerCount,
+                requiredAnswerCount: view.currentRound.requiredAnswerCount,
+                deadlineAt: view.currentRound.deadlineAt,
+              },
+            }))
+          }
+        })
+        activeSocket.on("game:state", (view) => {
+          if (active) {
+            setState((current) => ({
+              ...current,
+              gameStarted: true,
+              gameView: view,
+            }))
+          }
+        })
+        activeSocket.on("round:started", (view) => {
+          if (active) {
+            setState((current) => ({
+              ...current,
+              gameStarted: true,
+              gameView: view,
+              answerPhase: {
+                phase: view.currentRound.phase as
+                  | "protagonist_answer"
+                  | "players_answer"
+                  | "protagonist_selection",
+                answerCount: view.currentRound.answerCount,
+                requiredAnswerCount: view.currentRound.requiredAnswerCount,
+                deadlineAt: view.currentRound.deadlineAt,
+              },
+            }))
+          }
+        })
+        activeSocket.on("round:answer-phase", (phase) => {
+          if (active) {
+            setState((current) => ({
+              ...current,
+              answerPhase: phase,
+              gameView: current.gameView
+                ? {
+                    ...current.gameView,
+                    currentRound: {
+                      ...current.gameView.currentRound,
+                      phase: phase.phase,
+                      answerCount: phase.answerCount,
+                      requiredAnswerCount: phase.requiredAnswerCount,
+                      deadlineAt: phase.deadlineAt,
+                    },
+                  }
+                : null,
+            }))
+          }
+        })
+        activeSocket.on("round:reveal", (view) => {
+          if (active) {
+            setState((current) => ({
+              ...current,
+              gameView: view,
+              answerPhase: {
+                phase: "protagonist_selection",
+                answerCount: view.currentRound.answerCount,
+                requiredAnswerCount: view.currentRound.requiredAnswerCount,
+                deadlineAt: view.currentRound.deadlineAt,
+              },
+            }))
+          }
+        })
+        activeSocket.on("round:completed", (view) => {
+          if (active) setState((current) => ({ ...current, gameView: view }))
+        })
+        activeSocket.on("game:completed", (view) => {
+          if (active)
+            setState((current) => ({
+              ...current,
+              gameView: view,
+              gameStarted: true,
+            }))
+        })
+        activeSocket.on("score:updated", (scores) => {
+          if (active) {
+            const scoreById = new Map(
+              scores.map((player) => [player.id, player.score])
+            )
+            setState((current) => ({
+              ...current,
+              room: current.room
+                ? {
+                    ...current.room,
+                    players: current.room.players.map((player) => ({
+                      ...player,
+                      score: scoreById.get(player.id) ?? player.score,
+                    })),
+                  }
+                : null,
+              gameView: current.gameView
+                ? {
+                    ...current.gameView,
+                    players: current.gameView.players.map((player) => ({
+                      ...player,
+                      score: scoreById.get(player.id) ?? player.score,
+                    })),
+                  }
+                : null,
+            }))
+          }
         })
       } catch (loadError) {
         if (active) {
@@ -329,6 +460,104 @@ export function useRoomLobby(code: string) {
     })
   }
 
+  function submitAnswer(content: string): Promise<void> {
+    const normalized = content.trim()
+    if (!normalized || normalized.length > 240) {
+      setState((current) => ({
+        ...current,
+        actionError: "La risposta deve avere da 1 a 240 caratteri.",
+      }))
+      return Promise.resolve()
+    }
+    if (!socketRef.current?.connected) {
+      setState((current) => ({
+        ...current,
+        actionError: "Riconnessione al tavolo in corso…",
+      }))
+      return Promise.resolve()
+    }
+
+    setState((current) => ({
+      ...current,
+      isSubmittingAnswer: true,
+      actionError: "",
+    }))
+    return new Promise((resolve) => {
+      socketRef.current?.emit(
+        "answer:submit",
+        { content: normalized },
+        (result) => {
+          setState((current) => ({
+            ...current,
+            isSubmittingAnswer: false,
+            actionError: result.ok ? "" : errorMessage(result),
+            gameView:
+              result.ok && current.gameView
+                ? {
+                    ...current.gameView,
+                    currentRound: {
+                      ...current.gameView.currentRound,
+                      hasSubmittedAnswer: true,
+                    },
+                  }
+                : current.gameView,
+          }))
+          resolve()
+        }
+      )
+    })
+  }
+
+  function selectAnswer(answerId: string): Promise<void> {
+    if (!socketRef.current?.connected) {
+      setState((current) => ({
+        ...current,
+        actionError: "Riconnessione al tavolo in corso…",
+      }))
+      return Promise.resolve()
+    }
+    setState((current) => ({
+      ...current,
+      isSelectingAnswer: true,
+      actionError: "",
+    }))
+    return new Promise((resolve) => {
+      socketRef.current?.emit("answer:select", { answerId }, (result) => {
+        setState((current) => ({
+          ...current,
+          isSelectingAnswer: false,
+          actionError: result.ok ? "" : errorMessage(result),
+        }))
+        resolve()
+      })
+    })
+  }
+
+  function advanceRound(): Promise<void> {
+    if (!socketRef.current?.connected) {
+      setState((current) => ({
+        ...current,
+        actionError: "Riconnessione al tavolo in corso…",
+      }))
+      return Promise.resolve()
+    }
+    setState((current) => ({
+      ...current,
+      isAdvancingRound: true,
+      actionError: "",
+    }))
+    return new Promise((resolve) => {
+      socketRef.current?.emit("round:next", {}, (result) => {
+        setState((current) => ({
+          ...current,
+          isAdvancingRound: false,
+          actionError: result.ok ? "" : errorMessage(result),
+        }))
+        resolve()
+      })
+    })
+  }
+
   async function leaveRoom(): Promise<boolean> {
     setState((current) => ({ ...current, isLeaving: true, actionError: "" }))
     try {
@@ -368,6 +597,9 @@ export function useRoomLobby(code: string) {
     setReady,
     saveSettings,
     startGame,
+    submitAnswer,
+    selectAnswer,
+    advanceRound,
     leaveRoom,
   }
 }

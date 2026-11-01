@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 
 import { HostControls } from "@/components/room/host-controls"
@@ -27,6 +27,12 @@ function RoomLanding({ code }: { code: string }) {
     (player) => player.id === room.selfPlayerId
   )
   const isHost = currentPlayer?.isHost ?? false
+
+  useEffect(() => {
+    if (lobby.gameStarted) {
+      router.replace(`/game/${encodeURIComponent(code)}`)
+    }
+  }, [code, lobby.gameStarted, router])
 
   async function copyRoomCode() {
     try {

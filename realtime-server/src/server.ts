@@ -532,14 +532,12 @@ function registerGameEvents(
           voterId: socket.data.playerId,
           selectedAnswerId: databaseAnswerId,
         })
-        await Promise.all(
-          nextState.players.map((player) =>
-            transaction
-              .update(players)
-              .set({ score: player.score })
-              .where(eq(players.id, player.id))
-          )
-        )
+        for (const player of nextState.players) {
+          await transaction
+            .update(players)
+            .set({ score: player.score })
+            .where(eq(players.id, player.id))
+        }
         await transaction
           .update(rounds)
           .set({ status: "round_result", completedAt: new Date() })
@@ -847,14 +845,12 @@ async function persistExpiredPhase(
   }
 
   await database.transaction(async (transaction) => {
-    await Promise.all(
-      expiredState.players.map((player) =>
-        transaction
-          .update(players)
-          .set({ score: player.score })
-          .where(eq(players.id, player.id))
-      )
-    )
+    for (const player of expiredState.players) {
+      await transaction
+        .update(players)
+        .set({ score: player.score })
+        .where(eq(players.id, player.id))
+    }
     await transaction
       .update(rounds)
       .set({ status: "round_result", completedAt: new Date() })
