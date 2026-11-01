@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 
-import { DatabaseConfigurationError } from "./database.js"
-import { RoomServiceError } from "./room-service.js"
+import { DatabaseConfigurationError } from "./database"
+import { RoomServiceError } from "./room-service"
 
 const roomErrorStatus: Record<RoomServiceError["code"], number> = {
   ROOM_NOT_FOUND: 404,
@@ -22,21 +22,21 @@ export function roomErrorResponse(error: unknown): NextResponse {
   if (error instanceof RoomServiceError) {
     return NextResponse.json(
       { error: error.message, code: error.code },
-      { status: roomErrorStatus[error.code] },
+      { status: roomErrorStatus[error.code] }
     )
   }
 
   if (error instanceof DatabaseConfigurationError) {
     return NextResponse.json(
       { error: "Room service is not configured." },
-      { status: 503 },
+      { status: 503 }
     )
   }
 
   console.error("Room request failed.", error)
   return NextResponse.json(
     { error: "The room request could not be completed." },
-    { status: 500 },
+    { status: 500 }
   )
 }
 

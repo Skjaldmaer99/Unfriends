@@ -1,9 +1,9 @@
 import { and, asc, count, eq, sql } from "drizzle-orm"
 
-import { players, rooms } from "../db/schema.js"
-import { getDatabase } from "./database.js"
-import { generateRoomCode } from "./room-code.js"
-import type { JoinRoomInput, PlayerIdentity } from "./room-input.js"
+import { players, rooms } from "../db/schema"
+import { getDatabase } from "./database"
+import { generateRoomCode } from "./room-code"
+import type { JoinRoomInput, PlayerIdentity } from "./room-input"
 
 const MAX_CODE_ATTEMPTS = 8
 
@@ -20,7 +20,7 @@ export type RoomServiceErrorCode =
 export class RoomServiceError extends Error {
   constructor(
     readonly code: RoomServiceErrorCode,
-    message: string,
+    message: string
   ) {
     super(message)
     this.name = "RoomServiceError"
@@ -51,7 +51,7 @@ export interface RoomLobbySnapshot {
 
 export async function createRoom(
   identity: PlayerIdentity,
-  sessionTokenHash: string,
+  sessionTokenHash: string
 ): Promise<CreatedRoom> {
   const database = getDatabase()
 
@@ -83,7 +83,10 @@ export async function createRoom(
         continue
       }
       if (isUniqueConstraint(error, "players_session_token_hash_unique")) {
-        throw new RoomServiceError("UNAUTHORIZED", "Session token is already in use.")
+        throw new RoomServiceError(
+          "UNAUTHORIZED",
+          "Session token is already in use."
+        )
       }
       throw error
     }
@@ -91,13 +94,13 @@ export async function createRoom(
 
   throw new RoomServiceError(
     "ROOM_CODE_EXHAUSTED",
-    "A unique room code could not be generated. Try again.",
+    "A unique room code could not be generated. Try again."
   )
 }
 
 export async function joinRoom(
   input: JoinRoomInput,
-  sessionTokenHash: string,
+  sessionTokenHash: string
 ): Promise<CreatedRoom> {
   const database = getDatabase()
 
@@ -115,7 +118,7 @@ export async function joinRoom(
       if (room.status !== "waiting") {
         throw new RoomServiceError(
           "ROOM_UNAVAILABLE",
-          "This room is no longer accepting players.",
+          "This room is no longer accepting players."
         )
       }
 
@@ -125,7 +128,10 @@ export async function joinRoom(
         .where(eq(players.roomId, room.id))
 
       if (Number(playerCount.value) >= room.maxPlayers) {
-        throw new RoomServiceError("ROOM_FULL", "This room has reached its player limit.")
+        throw new RoomServiceError(
+          "ROOM_FULL",
+          "This room has reached its player limit."
+        )
       }
 
       const [existingNickname] = await transaction
@@ -134,15 +140,15 @@ export async function joinRoom(
         .where(
           and(
             eq(players.roomId, room.id),
-            sql`lower(${players.nickname}) = lower(${input.nickname})`,
-          ),
+            sql`lower(${players.nickname}) = lower(${input.nickname})`
+          )
         )
         .limit(1)
 
       if (existingNickname) {
         throw new RoomServiceError(
           "NICKNAME_TAKEN",
-          "That nickname is already used in this room.",
+          "That nickname is already used in this room."
         )
       }
 
@@ -163,11 +169,14 @@ export async function joinRoom(
     if (isUniqueConstraint(error, "players_room_nickname_unique")) {
       throw new RoomServiceError(
         "NICKNAME_TAKEN",
-        "That nickname is already used in this room.",
+        "That nickname is already used in this room."
       )
     }
     if (isUniqueConstraint(error, "players_session_token_hash_unique")) {
-      throw new RoomServiceError("UNAUTHORIZED", "Session token is already in use.")
+      throw new RoomServiceError(
+        "UNAUTHORIZED",
+        "Session token is already in use."
+      )
     }
     throw error
   }
@@ -175,7 +184,7 @@ export async function joinRoom(
 
 export async function getRoomLobby(
   code: string,
-  sessionTokenHash: string,
+  sessionTokenHash: string
 ): Promise<RoomLobbySnapshot> {
   const database = getDatabase()
   const [room] = await database
@@ -194,13 +203,16 @@ export async function getRoomLobby(
     .where(
       and(
         eq(players.roomId, room.id),
-        eq(players.sessionTokenHash, sessionTokenHash),
-      ),
+        eq(players.sessionTokenHash, sessionTokenHash)
+      )
     )
     .limit(1)
 
   if (!self) {
-    throw new RoomServiceError("UNAUTHORIZED", "Join this room to view its lobby.")
+    throw new RoomServiceError(
+      "UNAUTHORIZED",
+      "Join this room to view its lobby."
+    )
   }
 
   const roomPlayers = await database
@@ -229,7 +241,7 @@ export async function getRoomLobby(
 
 export async function leaveRoom(
   code: string,
-  sessionTokenHash: string,
+  sessionTokenHash: string
 ): Promise<{ roomClosed: boolean }> {
   const database = getDatabase()
 
@@ -250,13 +262,16 @@ export async function leaveRoom(
       .where(
         and(
           eq(players.roomId, room.id),
-          eq(players.sessionTokenHash, sessionTokenHash),
-        ),
+          eq(players.sessionTokenHash, sessionTokenHash)
+        )
       )
       .limit(1)
 
     if (!player) {
-      throw new RoomServiceError("UNAUTHORIZED", "Player session does not belong to this room.")
+      throw new RoomServiceError(
+        "UNAUTHORIZED",
+        "Player session does not belong to this room."
+      )
     }
 
     if (room.status !== "waiting") {
@@ -270,7 +285,9 @@ export async function leaveRoom(
     const remainingPlayers = await transaction
       .select({ id: players.id })
       .from(players)
-      .where(and(eq(players.roomId, room.id), sql`${players.id} <> ${player.id}`))
+      .where(
+        and(eq(players.roomId, room.id), sql`${players.id} <> ${player.id}`)
+      )
       .orderBy(asc(players.joinedAt), asc(players.id))
 
     await transaction.delete(players).where(eq(players.id, player.id))
@@ -294,7 +311,7 @@ export async function leaveRoom(
 
 export async function startRoom(
   code: string,
-  sessionTokenHash: string,
+  sessionTokenHash: string
 ): Promise<void> {
   const database = getDatabase()
 
@@ -309,7 +326,10 @@ export async function startRoom(
       throw new RoomServiceError("ROOM_NOT_FOUND", "Room code was not found.")
     }
     if (room.status !== "waiting") {
-      throw new RoomServiceError("ROOM_UNAVAILABLE", "This room has already started.")
+      throw new RoomServiceError(
+        "ROOM_UNAVAILABLE",
+        "This room has already started."
+      )
     }
 
     const [host] = await transaction
@@ -318,16 +338,22 @@ export async function startRoom(
       .where(
         and(
           eq(players.roomId, room.id),
-          eq(players.sessionTokenHash, sessionTokenHash),
-        ),
+          eq(players.sessionTokenHash, sessionTokenHash)
+        )
       )
       .limit(1)
 
     if (!host) {
-      throw new RoomServiceError("UNAUTHORIZED", "Player session does not belong to this room.")
+      throw new RoomServiceError(
+        "UNAUTHORIZED",
+        "Player session does not belong to this room."
+      )
     }
     if (!host.isHost) {
-      throw new RoomServiceError("HOST_REQUIRED", "Only the host can start the game.")
+      throw new RoomServiceError(
+        "HOST_REQUIRED",
+        "Only the host can start the game."
+      )
     }
 
     const [connectedCount] = await transaction
@@ -336,14 +362,14 @@ export async function startRoom(
       .where(
         and(
           eq(players.roomId, room.id),
-          eq(players.connectionStatus, "connected"),
-        ),
+          eq(players.connectionStatus, "connected")
+        )
       )
 
     if (Number(connectedCount.value) < 3) {
       throw new RoomServiceError(
         "TOO_FEW_PLAYERS",
-        "At least three connected players are required to start.",
+        "At least three connected players are required to start."
       )
     }
 
@@ -359,6 +385,10 @@ function isUniqueConstraint(error: unknown, constraint: string): boolean {
     return false
   }
 
-  const databaseError = error as { code?: unknown; constraint?: unknown }
-  return databaseError.code === "23505" && databaseError.constraint === constraint
+  return (
+    "code" in error &&
+    error.code === "23505" &&
+    "constraint" in error &&
+    error.constraint === constraint
+  )
 }

@@ -26,7 +26,7 @@ export async function getPlayerSessionHash(): Promise<string | null> {
 
 export function setPlayerSessionCookie(
   response: NextResponse,
-  token: string,
+  token: string
 ): void {
   response.cookies.set({
     name: PLAYER_SESSION_COOKIE,

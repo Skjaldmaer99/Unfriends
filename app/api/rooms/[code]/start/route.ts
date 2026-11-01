@@ -18,7 +18,10 @@ export async function POST(_request: Request, context: StartRoomRouteContext) {
 
   const sessionTokenHash = await getPlayerSessionHash()
   if (!sessionTokenHash) {
-    return Response.json({ error: "A player session is required." }, { status: 401 })
+    return Response.json(
+      { error: "A player session is required." },
+      { status: 401 }
+    )
   }
 
   try {

@@ -18,7 +18,10 @@ export async function GET(_request: Request, context: RoomRouteContext) {
 
   const sessionTokenHash = await getPlayerSessionHash()
   if (!sessionTokenHash) {
-    return Response.json({ error: "A player session is required." }, { status: 401 })
+    return Response.json(
+      { error: "A player session is required." },
+      { status: 401 }
+    )
   }
 
   try {

@@ -18,6 +18,9 @@ describe("room code generation", () => {
   })
 
   it("rejects an invalid random source result", () => {
-    assert.throws(() => generateRoomCode(() => ROOM_CODE_ALPHABET.length), RangeError)
+    assert.throws(
+      () => generateRoomCode(() => ROOM_CODE_ALPHABET.length),
+      RangeError
+    )
   })
 })

@@ -18,7 +18,7 @@ import { sql } from "drizzle-orm"
 import {
   QUESTION_CATEGORIES,
   type GameSettings,
-} from "../realtime-server/src/game/types.js"
+} from "../realtime-server/src/game/types"
 
 export const roomStatusEnum = pgEnum("room_status", [
   "waiting",

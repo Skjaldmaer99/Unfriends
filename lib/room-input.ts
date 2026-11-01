@@ -2,11 +2,19 @@ import { z } from "zod"
 
 export const PlayerIdentitySchema = z.object({
   nickname: z.string().trim().min(1).max(24),
-  avatar: z.string().trim().regex(/^[a-z0-9-]{1,32}$/).default("sun"),
+  avatar: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9-]{1,32}$/)
+    .default("sun"),
 })
 
 export const JoinRoomSchema = PlayerIdentitySchema.extend({
-  code: z.string().trim().toUpperCase().regex(/^[A-HJ-NP-Z2-9]{6}$/),
+  code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-HJ-NP-Z2-9]{6}$/),
 })
 
 export const RoomCodeSchema = z

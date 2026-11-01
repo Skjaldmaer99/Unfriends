@@ -10,7 +10,7 @@ Party game multiplayer per gruppi di amici: a ogni turno un protagonista rispond
 | ----------- | ----------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Frontend    | Next.js App Router, React, TypeScript                 | Presente (Next.js 16.4.3, React 19.3.1, TypeScript 5.9.3)                    |
 | UI          | Tailwind CSS 4, shadcn/ui, Lucide React               | Presente                                                                     |
-| API HTTP    | Next.js Route Handlers                                | Next.js presente; endpoint da implementare                                   |
+| API HTTP    | Next.js Route Handlers                                | API create/join/lobby/leave/start implementate                               |
 | Realtime    | Node.js, TypeScript, Socket.IO                        | Dipendenze configurate nel workspace `realtime-server/`                      |
 | Validazione | Zod                                                   | Installato nell'app e nel workspace realtime                                 |
 | Persistenza | PostgreSQL, Drizzle ORM e Drizzle Kit                 | Schema, migrazione e seed implementati; applicazione richiede `DATABASE_URL` |
@@ -45,13 +45,14 @@ public/              Asset statici
 
 ```text
 app/                 Frontend Next.js e Route Handlers
+  api/rooms/         Creazione e gestione HTTP delle stanze
 components/
   ui/                Primitive UI
   lobby/             Componenti della lobby
   game/              Componenti della partita
   shared/            Componenti condivisi
 hooks/               Hook React, incluso il collegamento al realtime
-lib/                 Utility frontend condivise
+lib/                 Database, sessioni, codici e servizi room
 realtime-server/
   src/
     game/            Modello del gameplay e test unitari
@@ -83,7 +84,7 @@ Le modalità aggiuntive, i profili, gli amici e le classifiche globali restano f
 | 1. Configurazione stack       | Completata              | Dipendenze installate; `realtime-server/` configurato come workspace npm separato. |
 | 2. Regole di gameplay         | Completata              | Motore puro: fasi, privacy delle viste, punteggio, timer, rotazione e test.        |
 | 3. Database e dati            | Completata              | Sei tabelle, vincoli relazionali, migrazione iniziale e 48 domande seed.           |
-| 4. Gestione stanze            | Da iniziare             | Creazione, ingresso, uscita e lobby.                                               |
+| 4. Gestione stanze            | Completata              | API persistenti, cookie sessione, host handoff, lobby e avvio con almeno 3.        |
 | 5. Server Socket.IO           | Da iniziare             | Stato autorevole, eventi validati e privacy.                                       |
 | 6. Design system              | Da iniziare             | Estensione coerente dell'attuale base shadcn.                                      |
 | 7. Pagina home                | Da iniziare             | Creazione/accesso alla partita.                                                    |
@@ -111,6 +112,7 @@ Apri `http://localhost:3000`. Per i controlli disponibili:
 npm run typecheck
 npm run lint
 npm run build
+npm run test:rooms
 npm test --workspace @unfriends/realtime-server
 npm run typecheck --workspace @unfriends/realtime-server
 npm run db:generate
@@ -129,4 +131,6 @@ Per migrazioni e seed configura `DATABASE_URL` nell'ambiente, ad esempio verso u
 - Task 2: il dominio in `realtime-server/src/game/` definisce le fasi del round, validazione di risposte, timer, risposte private/anonime nelle viste, selezione del protagonista, punteggio e rotazione deterministica. Cinque test coprono privacy, punteggio, due giocatori, rotazione, invii non validi e selezione tra risposte coincidenti.
 - Task 3: `db/schema.ts` definisce rooms, players, questions, rounds, answers e votes con vincoli per session hash, nickname/host, invii unici e voto del protagonista alla risposta dello stesso round. La migrazione `db/migrations/0000_romantic_dust.sql` è generata; `db/seed.ts` aggiunge 48 domande italiane in modo idempotente.
 - Limite verifica Task 3: generazione e coerenza delle migrazioni, typecheck e lint dei file DB passano. Non è stato possibile applicare migrazione o seed: PostgreSQL locale richiede autenticazione password e `DATABASE_URL` non è configurata.
+- Task 4: Route Handlers `POST /api/rooms`, `POST /api/rooms/[code]/join`, `GET /api/rooms/[code]`, `POST /api/rooms/[code]/leave` e `POST /api/rooms/[code]/start`; i servizi serializzano join/leave/start con lock di stanza, trasferiscono l'host e conservano i giocatori usciti durante la partita come disconnessi. I token sessione sono cookie `HttpOnly` e nel DB è salvato solo SHA-256. Lo start porta la room a `in_progress`; avvio della partita e notifiche realtime sono nella Task 5.
+- Limite verifica Task 4: test unitari, typecheck e build Next passano; i flussi con persistenza non sono stati esercitati end-to-end perché l'autenticazione del PostgreSQL locale non è configurata.
 - Verifica: `npm run typecheck` passa; `npm run lint` termina senza errori ma segnala un warning preesistente per l'import `Geist` non utilizzato in `app/layout.tsx`. `npm install` ha riportato vulnerabilità nel dependency tree, da valutare senza aggiornamenti automatici non revisionati.

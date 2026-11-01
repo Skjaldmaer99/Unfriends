@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server"
 
 import { RoomCodeSchema } from "@/lib/room-input"
-import { clearPlayerSessionCookie, getPlayerSessionHash } from "@/lib/player-session"
+import {
+  clearPlayerSessionCookie,
+  getPlayerSessionHash,
+} from "@/lib/player-session"
 import { invalidRequest, roomErrorResponse } from "@/lib/room-http"
 import { leaveRoom } from "@/lib/room-service"
 
@@ -20,7 +23,10 @@ export async function POST(_request: Request, context: LeaveRoomRouteContext) {
 
   const sessionTokenHash = await getPlayerSessionHash()
   if (!sessionTokenHash) {
-    return Response.json({ error: "A player session is required." }, { status: 401 })
+    return Response.json(
+      { error: "A player session is required." },
+      { status: 401 }
+    )
   }
 
   try {
