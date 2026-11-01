@@ -53,7 +53,9 @@ components/
 hooks/               Hook React, incluso il collegamento al realtime
 lib/                 Utility frontend condivise
 realtime-server/
-  src/               Server Socket.IO, eventi, stanze e logica di gioco
+  src/
+    game/            Modello del gameplay e test unitari
+    ...              Server Socket.IO, eventi, stanze e servizi
 packages/shared/
   src/               Tipi e schemi condivisi tra frontend e realtime
 db/                  Schema Drizzle, migrazioni e seed
@@ -79,7 +81,7 @@ Le modalità aggiuntive, i profili, gli amici e le classifiche globali restano f
 | ----------------------------- | ----------------------- | ---------------------------------------------------------------------------------- |
 | 0. Analisi e organizzazione   | Completata              | Repository e dipendenze verificati; architettura e questo documento definiti.      |
 | 1. Configurazione stack       | Completata              | Dipendenze installate; `realtime-server/` configurato come workspace npm separato. |
-| 2. Regole di gameplay         | Da iniziare             | Definire e testare il dominio prima dell'interfaccia.                              |
+| 2. Regole di gameplay         | Completata              | Motore puro: fasi, privacy delle viste, punteggio, timer, rotazione e test.        |
 | 3. Database e dati            | Da iniziare             | Schema, migrazioni e seed.                                                         |
 | 4. Gestione stanze            | Da iniziare             | Creazione, ingresso, uscita e lobby.                                               |
 | 5. Server Socket.IO           | Da iniziare             | Stato autorevole, eventi validati e privacy.                                       |
@@ -109,6 +111,8 @@ Apri `http://localhost:3000`. Per i controlli disponibili:
 npm run typecheck
 npm run lint
 npm run build
+npm test --workspace @unfriends/realtime-server
+npm run typecheck --workspace @unfriends/realtime-server
 ```
 
 Il template attuale non richiede variabili d'ambiente per partire. Le istruzioni per PostgreSQL, migrazioni, seed e server realtime verranno aggiunte quando saranno implementati i rispettivi servizi; nessuna credenziale reale va inserita nel repository.
@@ -119,4 +123,5 @@ Il template attuale non richiede variabili d'ambiente per partire. Le istruzioni
 - Route Handlers sono previsti nell'App Router; il server Socket.IO sarà separato e non verrà avviato tramite un custom server Next.js.
 - Il repository contiene già Tailwind CSS 4, shadcn/ui, Lucide React, `next-themes` e React Aria Components.
 - Configurazione Task 1: installati `socket.io`, `socket.io-client`, `zod`, `drizzle-orm`, `drizzle-kit`, `pg` e `@types/pg`; il package `realtime-server/` dichiara le proprie dipendenze runtime.
+- Task 2: il dominio in `realtime-server/src/game/` definisce le fasi del round, validazione di risposte, timer, risposte private/anonime nelle viste, selezione del protagonista, punteggio e rotazione deterministica. Cinque test coprono privacy, punteggio, due giocatori, rotazione, invii non validi e selezione tra risposte coincidenti.
 - Verifica: `npm run typecheck` passa; `npm run lint` termina senza errori ma segnala un warning preesistente per l'import `Geist` non utilizzato in `app/layout.tsx`. `npm install` ha riportato vulnerabilità nel dependency tree, da valutare senza aggiornamenti automatici non revisionati.
