@@ -70,6 +70,8 @@ CREATE TABLE "votes" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX "answers_id_round_unique" ON "answers" USING btree ("id","round_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "rounds_id_protagonist_unique" ON "rounds" USING btree ("id","protagonist_id");--> statement-breakpoint
 ALTER TABLE "answers" ADD CONSTRAINT "answers_round_id_rounds_id_fk" FOREIGN KEY ("round_id") REFERENCES "public"."rounds"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "answers" ADD CONSTRAINT "answers_player_id_players_id_fk" FOREIGN KEY ("player_id") REFERENCES "public"."players"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "players" ADD CONSTRAINT "players_room_id_rooms_id_fk" FOREIGN KEY ("room_id") REFERENCES "public"."rooms"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -79,7 +81,6 @@ ALTER TABLE "rounds" ADD CONSTRAINT "rounds_protagonist_id_players_id_fk" FOREIG
 ALTER TABLE "votes" ADD CONSTRAINT "votes_round_protagonist_fk" FOREIGN KEY ("round_id","voter_id") REFERENCES "public"."rounds"("id","protagonist_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "votes" ADD CONSTRAINT "votes_selected_answer_same_round_fk" FOREIGN KEY ("selected_answer_id","round_id") REFERENCES "public"."answers"("id","round_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "answers_round_player_unique" ON "answers" USING btree ("round_id","player_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "answers_id_round_unique" ON "answers" USING btree ("id","round_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "answers_one_original_per_round_unique" ON "answers" USING btree ("round_id") WHERE "answers"."is_original_answer";--> statement-breakpoint
 CREATE INDEX "answers_round_id_idx" ON "answers" USING btree ("round_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "players_session_token_hash_unique" ON "players" USING btree ("session_token_hash");--> statement-breakpoint
@@ -90,6 +91,5 @@ CREATE UNIQUE INDEX "questions_text_unique" ON "questions" USING btree ("text");
 CREATE INDEX "questions_active_category_idx" ON "questions" USING btree ("is_active","category");--> statement-breakpoint
 CREATE UNIQUE INDEX "rooms_code_unique" ON "rooms" USING btree ("code");--> statement-breakpoint
 CREATE UNIQUE INDEX "rounds_room_number_unique" ON "rounds" USING btree ("room_id","round_number");--> statement-breakpoint
-CREATE UNIQUE INDEX "rounds_id_protagonist_unique" ON "rounds" USING btree ("id","protagonist_id");--> statement-breakpoint
 CREATE INDEX "rounds_room_id_idx" ON "rounds" USING btree ("room_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "votes_round_voter_unique" ON "votes" USING btree ("round_id","voter_id");

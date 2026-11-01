@@ -18,7 +18,7 @@ L'obiettivo principale è creare un'esperienza divertente, immediata, intuitiva 
 - [x] Task 4 – Sistema di gestione delle stanze
 - [x] Task 5 – Server realtime con Socket.IO
 - [x] Task 6 – Design system e interfaccia
-- [ ] Task 7 – Pagina home
+- [x] Task 7 – Pagina home
 - [ ] Task 8 – Lobby multiplayer
 - [ ] Task 9 – Implementazione della partita
 - [ ] Task 10 – Classifica e fine partita

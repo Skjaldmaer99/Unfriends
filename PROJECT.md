@@ -45,7 +45,9 @@ public/              Asset statici
 
 ```text
 app/                 Frontend Next.js e Route Handlers
+  page.tsx           Home con creazione e accesso stanza
   api/rooms/         Creazione e gestione HTTP delle stanze
+  room/[code]/       Destinazione stanza e snapshot iniziale
 components/
   ui/                Button, input, dialog, avatar, badge, card, toast, timer,
                      progress, player card, score badge e loading state
@@ -90,7 +92,7 @@ Le modalità aggiuntive, i profili, gli amici e le classifiche globali restano f
 | 4. Gestione stanze            | Completata              | API persistenti, cookie sessione, host handoff e lobby; avvio via Socket.IO.       |
 | 5. Server Socket.IO           | Completata              | Ticket firmati, eventi Zod, lobby, round, timeout, privacy e persistenza.          |
 | 6. Design system              | Completata              | Token multi-tono, font dedicati, primitive accessibili e target touch da 44px.     |
-| 7. Pagina home                | Da iniziare             | Creazione/accesso alla partita.                                                    |
+| 7. Pagina home                | Completata              | Form create/join reali, avatar, validazione, errori localizzati e redirect.        |
 | 8. Lobby multiplayer          | Da iniziare             | Presenza e controlli host realtime.                                                |
 | 9. Partita                    | Da iniziare             | Flusso completo dei round.                                                         |
 | 10. Classifica e fine partita | Da iniziare             | Punteggi, risultato e replay.                                                      |
@@ -150,11 +152,13 @@ Configura lo stesso `SOCKET_TICKET_SECRET` anche per Next.js. In produzione, `SO
 - Configurazione Task 1: installati `socket.io`, `socket.io-client`, `zod`, `drizzle-orm`, `drizzle-kit`, `pg` e `@types/pg`; il package `realtime-server/` dichiara le proprie dipendenze runtime.
 - Task 2: il dominio in `realtime-server/src/game/` definisce le fasi del round, validazione di risposte, timer, risposte private/anonime nelle viste, selezione del protagonista, punteggio e rotazione deterministica. Cinque test coprono privacy, punteggio, due giocatori, rotazione, invii non validi e selezione tra risposte coincidenti.
 - Task 3: `db/schema.ts` definisce rooms, players, questions, rounds, answers e votes con vincoli per session hash, nickname/host, invii unici e voto del protagonista alla risposta dello stesso round. La migrazione `db/migrations/0000_romantic_dust.sql` è generata; `db/seed.ts` aggiunge 48 domande italiane in modo idempotente.
-- Limite verifica Task 3: generazione e coerenza delle migrazioni, typecheck e lint dei file DB passano. Non è stato possibile applicare migrazione o seed: PostgreSQL locale richiede autenticazione password e `DATABASE_URL` non è configurata.
+- Verifica Task 3: migrazione applicata al database PostgreSQL locale e seed completato (6 tabelle, 48 domande, 1 migrazione registrata). La causa iniziale era l'ordine del DDL: le foreign key composte dei voti venivano create prima degli indici univoci composti necessari; gli indici sono stati spostati prima dei vincoli nella migrazione.
 - Task 4: Route Handlers `POST /api/rooms`, `POST /api/rooms/[code]/join`, `GET /api/rooms/[code]` e `POST /api/rooms/[code]/leave`; i servizi serializzano join/leave con lock di stanza, trasferiscono l'host e conservano i giocatori usciti durante la partita come disconnessi. I token sessione sono cookie `HttpOnly` e nel DB è salvato solo SHA-256. Lo start è ora solo Socket.IO, per evitare di impostare `in_progress` senza creare il round.
-- Limite verifica Task 4: test unitari, typecheck e build Next passano; i flussi con persistenza non sono stati esercitati end-to-end perché l'autenticazione del PostgreSQL locale non è configurata.
+- Limite verifica Task 4: test unitari, typecheck e build Next passano. Il DB è ora disponibile; i flussi HTTP room non sono ancora coperti da test end-to-end dedicati.
 - Task 5: server avviabile con `npm run dev --workspace @unfriends/realtime-server`, health check `/healthz`, CORS con allowlist esatta e trasporto WebSocket. Il ticket JWT è firmato, legato a player/stanza e dura 60 secondi; il middleware verifica membership nel DB. Il server valida payload con Zod, autorizza ogni evento tramite l'identità del ticket, gestisce lobby/ready/start/leave, round, risposte, voti, punteggi e timeout; scrive round/risposte/voti/punteggi in PostgreSQL e invia viste per giocatore per preservare la privacy.
-- Limite verifica Task 5: typecheck, build Next, lint e 14 test realtime passano. I test coprono ticket, payload, health, handshake invalido e scadenze; non è stato possibile testare un handshake autenticato o una partita completa perché PostgreSQL locale richiede una password corretta e `DATABASE_URL` non è disponibile. Lo stato attivo è in memoria per istanza: un riavvio del processo non ripristina ancora una partita in corso; il recupero è da completare nella Task 11.
+- Limite verifica Task 5: typecheck, build Next, lint e 14 test realtime passano. I test coprono ticket, payload, health, handshake invalido e scadenze; handshake autenticato e partita completa con più client non sono ancora coperti. Lo stato attivo è in memoria per istanza: un riavvio del processo non ripristina ancora una partita in corso; il recupero è da completare nella Task 11.
 - Task 6: palette OKLCH corallo/teal/giallo con modalità chiara/scura e texture leggera, font Raleway/Inter con mapping Tailwind corretto, lingua e metadata italiani. Primitive condivise in `components/ui/`: button, input, badge, card, avatar, dialog React Aria, toast Sonner, progress, timer, player card, score badge e loading state; i pulsanti principali hanno target touch da 44px e le animazioni rispettano `prefers-reduced-motion`.
 - Verifica Task 6: `npm run typecheck`, `npm run build`, `npm run lint`, 14 test realtime, 7 test room, Prettier e `git diff --check` passano.
+- Task 7: home italiana responsive con apertura stanza e ingresso via codice, nickname e avatar; usa gli endpoint reali, mantiene gli errori inline e porta alla route `/room/[code]`. La route mostra lo snapshot API autenticato e permette di copiare il codice o lasciare la stanza; gli aggiornamenti live e i controlli host restano alla Task 8.
+- Verifica Task 7: creazione provata nel browser fino a stanza e snapshot, uscita verificata; codice stanza inesistente mostra il messaggio previsto. A 390px non c'è overflow orizzontale. Typecheck, lint, build, 14 test realtime, 7 test room, Prettier e `git diff --check` passano.
 - Nota dipendenze: `npm install` ha riportato vulnerabilità nel dependency tree, da valutare senza aggiornamenti automatici non revisionati.
