@@ -2,12 +2,15 @@ import { z } from "zod"
 
 import { GameSettingsSchema, type GameSettings } from "./game/types.js"
 import type { PlayerGameView } from "./game/types.js"
+import type { GameSummary } from "./game/game-summary.js"
+export type { GameSummary } from "./game/game-summary.js"
 
 const roomCodeSchema = z.string().regex(/^[A-HJ-NP-Z2-9]{6}$/)
 
 export const clientEventSchemas = {
   "room:leave": z.object({}).strict(),
   "room:start": z.object({}).strict(),
+  "game:replay": z.object({}).strict(),
   "room:settings": z.object({ settings: GameSettingsSchema }).strict(),
   "player:ready": z.object({ ready: z.boolean() }).strict(),
   "answer:submit": z
@@ -34,7 +37,6 @@ export interface RoomSnapshot {
   settings: GameSettings
   players: SocketPlayerSummary[]
 }
-
 export interface EventFailure {
   ok: false
   code: string
@@ -79,6 +81,10 @@ export interface ClientToServerEvents {
     payload: Record<string, never>,
     ack: EventAck<{ finished: boolean }>
   ) => void
+  "game:replay": (
+    payload: Record<string, never>,
+    ack: EventAck<{ replayed: true }>
+  ) => void
 }
 
 export interface ServerToClientEvents {
@@ -105,6 +111,8 @@ export interface ServerToClientEvents {
     >
   ) => void
   "game:completed": (view: PlayerGameView) => void
+  "game:summary": (summary: GameSummary) => void
+  "game:replayed": (snapshot: RoomSnapshot) => void
 }
 
 export interface SocketData {

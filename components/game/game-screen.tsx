@@ -7,6 +7,7 @@ import { ArrowLeft, Wifi, WifiOff } from "lucide-react"
 import { useRoomLobby } from "@/components/room/use-room-lobby"
 import { AnswerForm } from "@/components/game/answer-form"
 import { AnswerReveal } from "@/components/game/answer-reveal"
+import { FinalGameSummary } from "@/components/game/final-game-summary"
 import { GameHeader } from "@/components/game/game-header"
 import { QuestionCard } from "@/components/game/question-card"
 import { RoundResult } from "@/components/game/round-result"
@@ -63,6 +64,19 @@ function GameScreen({ code }: { code: string }) {
           Torna alla stanza
         </Button>
       </main>
+    )
+  }
+
+  if (view.currentRound.phase === "finished" && game.gameSummary) {
+    return (
+      <FinalGameSummary
+        view={view}
+        summary={game.gameSummary}
+        isHost={isHost}
+        isReplaying={game.isReplaying}
+        onReplay={game.replayGame}
+        onHome={() => router.push("/")}
+      />
     )
   }
 

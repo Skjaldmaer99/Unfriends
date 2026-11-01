@@ -12,6 +12,7 @@ import {
 import type {
   ClientToServerEvents,
   EventFailure,
+  GameSummary,
   RoomSnapshot,
   ServerToClientEvents,
 } from "@/realtime-server/src/protocol"
@@ -48,6 +49,7 @@ interface LobbyState {
   isLeaving: boolean
   gameStarted: boolean
   gameView: PlayerGameView | null
+  gameSummary: GameSummary | null
   answerPhase: {
     phase: "protagonist_answer" | "players_answer" | "protagonist_selection"
     answerCount: number
@@ -57,6 +59,7 @@ interface LobbyState {
   isSubmittingAnswer: boolean
   isSelectingAnswer: boolean
   isAdvancingRound: boolean
+  isReplaying: boolean
   error: string
   actionError: string
 }
@@ -71,10 +74,12 @@ const initialState: LobbyState = {
   isLeaving: false,
   gameStarted: false,
   gameView: null,
+  gameSummary: null,
   answerPhase: null,
   isSubmittingAnswer: false,
   isSelectingAnswer: false,
   isAdvancingRound: false,
+  isReplaying: false,
   error: "",
   actionError: "",
 }
@@ -357,6 +362,28 @@ export function useRoomLobby(code: string) {
             }))
           }
         })
+        activeSocket.on("game:summary", (summary) => {
+          if (active) {
+            setState((current) => ({ ...current, gameSummary: summary }))
+          }
+        })
+        activeSocket.on("game:replayed", (snapshot) => {
+          if (active) {
+            setState((current) => ({
+              ...current,
+              room: {
+                ...snapshot,
+                selfPlayerId:
+                  current.room?.selfPlayerId ?? initialRoom.selfPlayerId,
+              },
+              gameStarted: false,
+              gameView: null,
+              gameSummary: null,
+              readyByPlayerId: {},
+              actionError: "",
+            }))
+          }
+        })
       } catch (loadError) {
         if (active) {
           setState((current) => ({
@@ -558,6 +585,28 @@ export function useRoomLobby(code: string) {
     })
   }
 
+  function replayGame(): Promise<void> {
+    if (!socketRef.current?.connected) {
+      setState((current) => ({
+        ...current,
+        actionError: "Riconnessione al tavolo in corso…",
+      }))
+      return Promise.resolve()
+    }
+
+    setState((current) => ({ ...current, isReplaying: true, actionError: "" }))
+    return new Promise((resolve) => {
+      socketRef.current?.emit("game:replay", {}, (result) => {
+        setState((current) => ({
+          ...current,
+          isReplaying: false,
+          actionError: result.ok ? "" : errorMessage(result),
+        }))
+        resolve()
+      })
+    })
+  }
+
   async function leaveRoom(): Promise<boolean> {
     setState((current) => ({ ...current, isLeaving: true, actionError: "" }))
     try {
@@ -600,6 +649,7 @@ export function useRoomLobby(code: string) {
     submitAnswer,
     selectAnswer,
     advanceRound,
+    replayGame,
     leaveRoom,
   }
 }

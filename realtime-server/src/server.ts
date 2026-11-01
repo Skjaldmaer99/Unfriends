@@ -3,7 +3,7 @@ import {
   type Server as HttpServer,
 } from "node:http"
 import { Server as SocketServer, type Socket } from "socket.io"
-import { and, asc, eq, inArray } from "drizzle-orm"
+import { and, asc, eq, gt, inArray, lte, max } from "drizzle-orm"
 
 import {
   answers,
@@ -30,6 +30,8 @@ import {
   submitPlayerAnswer,
   submitProtagonistAnswer,
 } from "./game/game-engine.js"
+import { buildGameSummary } from "./game/game-summary.js"
+import type { GameSummary } from "./game/game-summary.js"
 import type { GameState } from "./game/types.js"
 import { clientEventSchemas } from "./protocol.js"
 import type {
@@ -56,6 +58,7 @@ interface ActiveGame {
   hostPlayerId: string
   state: GameState
   databaseRoundId: string
+  roundOffset: number
   answerIds: Map<string, string>
 }
 
@@ -285,6 +288,10 @@ async function handleConnection(
   const activeGame = activeGames.get(roomCode)
   if (activeGame) {
     emitViewToSocket(socket, "game:state", activeGame.state)
+    if (activeGame.state.status === "finished") {
+      const summary = await buildPersistedGameSummary(activeGame)
+      socket.emit("game:summary", summary)
+    }
   } else if (snapshot.status === "in_progress") {
     socket.emit("room:error", {
       ok: false,
@@ -349,6 +356,66 @@ function registerRoomEvents(
       await broadcastRoom(io, socket.data.roomCode)
       await emitGameViews(io, "game:started", game.state)
       return { started: true } as const
+    })
+  })
+
+  socket.on("game:replay", (payload, ack) => {
+    void runAction(socket, ack, async () => {
+      clientEventSchemas["game:replay"].parse(payload)
+      const game = activeGames.get(socket.data.roomCode)
+      if (!game || game.state.status !== "finished") {
+        throw new RoomServiceError(
+          "ROOM_UNAVAILABLE",
+          "Replay is only available after the game is finished."
+        )
+      }
+      if (socket.data.playerId !== game.hostPlayerId) {
+        throw new RoomServiceError(
+          "HOST_REQUIRED",
+          "Only the host can start a replay."
+        )
+      }
+
+      const database = getDatabase()
+      await database.transaction(async (transaction) => {
+        const [room] = await transaction
+          .select({ id: rooms.id, status: rooms.status })
+          .from(rooms)
+          .where(eq(rooms.id, game.roomId))
+          .for("update")
+
+        if (!room || room.status !== "finished") {
+          throw new RoomServiceError(
+            "ROOM_UNAVAILABLE",
+            "The room is no longer available for replay."
+          )
+        }
+
+        const roomPlayers = await transaction
+          .select({ id: players.id })
+          .from(players)
+          .where(eq(players.roomId, game.roomId))
+
+        for (const player of roomPlayers) {
+          await transaction
+            .update(players)
+            .set({ score: 0 })
+            .where(eq(players.id, player.id))
+        }
+        await transaction
+          .update(rooms)
+          .set({ status: "waiting", updatedAt: new Date() })
+          .where(eq(rooms.id, game.roomId))
+      })
+
+      activeGames.delete(socket.data.roomCode)
+      readyPlayers.set(socket.data.roomCode, new Map())
+      clearPhaseTimer(socket.data.roomCode)
+      clearRevealTimer(socket.data.roomCode)
+      const snapshot = await getRoomSnapshot(socket.data.roomCode)
+      io.to(socket.data.roomCode).emit("game:replayed", snapshot)
+      io.to(socket.data.roomCode).emit("room:updated", snapshot)
+      return { replayed: true } as const
     })
   })
 
@@ -587,6 +654,10 @@ function registerGameEvents(
         game.state = nextState
         clearPhaseTimer(game.roomCode)
         await emitGameViews(io, "game:completed", nextState)
+        io.to(game.roomCode).emit(
+          "game:summary",
+          await buildPersistedGameSummary(game)
+        )
         await broadcastRoom(io, game.roomCode)
         return { finished: true }
       }
@@ -597,7 +668,7 @@ function registerGameEvents(
           roomId: game.roomId,
           questionId: nextState.currentRound.question.id,
           protagonistId: nextState.currentRound.protagonistId,
-          roundNumber: nextState.currentRound.number,
+          roundNumber: game.roundOffset + nextState.currentRound.number,
           status: "protagonist_answer",
         })
         .returning({ id: rounds.id })
@@ -701,13 +772,18 @@ async function startGame(
       questions: questionBank,
       settings: room.settings,
     })
+    const [lastRound] = await transaction
+      .select({ value: max(rounds.roundNumber) })
+      .from(rounds)
+      .where(eq(rounds.roomId, room.id))
+    const roundOffset = Number(lastRound.value ?? 0)
     const [databaseRound] = await transaction
       .insert(rounds)
       .values({
         roomId: room.id,
         questionId: state.currentRound.question.id,
         protagonistId: state.currentRound.protagonistId,
-        roundNumber: 1,
+        roundNumber: roundOffset + 1,
         status: "protagonist_answer",
       })
       .returning({ id: rounds.id })
@@ -722,8 +798,63 @@ async function startGame(
       hostPlayerId,
       state,
       databaseRoundId: databaseRound.id,
+      roundOffset,
       answerIds: new Map(),
     }
+  })
+}
+
+async function buildPersistedGameSummary(
+  game: ActiveGame
+): Promise<GameSummary> {
+  const database = getDatabase()
+  const lastRoundNumber = game.roundOffset + game.state.totalRounds
+  const gameRounds = await database
+    .select({ id: rounds.id, protagonistId: rounds.protagonistId })
+    .from(rounds)
+    .where(
+      and(
+        eq(rounds.roomId, game.roomId),
+        gt(rounds.roundNumber, game.roundOffset),
+        lte(rounds.roundNumber, lastRoundNumber)
+      )
+    )
+  const roundIds = gameRounds.map((round) => round.id)
+
+  if (roundIds.length === 0) {
+    return buildGameSummary({
+      players: game.state.players,
+      rounds: [],
+      answers: [],
+      votes: [],
+    })
+  }
+
+  const [gameAnswers, gameVotes] = await Promise.all([
+    database
+      .select({
+        id: answers.id,
+        roundId: answers.roundId,
+        playerId: answers.playerId,
+        content: answers.content,
+        isOriginalAnswer: answers.isOriginalAnswer,
+      })
+      .from(answers)
+      .where(inArray(answers.roundId, roundIds)),
+    database
+      .select({
+        roundId: votes.roundId,
+        selectedAnswerId: votes.selectedAnswerId,
+      })
+      .from(votes)
+      .where(inArray(votes.roundId, roundIds)),
+  ])
+
+  return buildGameSummary({
+    players: game.state.players,
+    rounds: gameRounds,
+    answers: gameAnswers,
+    votes: gameVotes,
   })
 }
 

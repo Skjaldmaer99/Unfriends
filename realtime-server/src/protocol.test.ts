@@ -67,4 +67,13 @@ describe("realtime event schemas", () => {
       true
     )
   })
+
+  it("accepts an empty replay command and rejects client-controlled room data", () => {
+    assert.deepEqual(clientEventSchemas["game:replay"].parse({}), {})
+    assert.equal(
+      clientEventSchemas["game:replay"].safeParse({ roomCode: "OTHER1" })
+        .success,
+      false
+    )
+  })
 })
