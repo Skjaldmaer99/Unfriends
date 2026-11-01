@@ -51,6 +51,8 @@ app/                 Frontend Next.js e Route Handlers
 components/
   ui/                Button, input, dialog, avatar, badge, card, toast, timer,
                      progress, player card, score badge e loading state
+  room/              Lobby realtime, header, codice, lista giocatori, settings,
+                     host controls, stato pronto e footer
   lobby/             Componenti della lobby
   game/              Componenti della partita
   shared/            Componenti condivisi
@@ -93,7 +95,7 @@ Le modalità aggiuntive, i profili, gli amici e le classifiche globali restano f
 | 5. Server Socket.IO           | Completata              | Ticket firmati, eventi Zod, lobby, round, timeout, privacy e persistenza.          |
 | 6. Design system              | Completata              | Token multi-tono, font dedicati, primitive accessibili e target touch da 44px.     |
 | 7. Pagina home                | Completata              | Form create/join reali, avatar, validazione, errori localizzati e redirect.        |
-| 8. Lobby multiplayer          | Da iniziare             | Presenza e controlli host realtime.                                                |
+| 8. Lobby multiplayer          | Completata              | Lobby Socket.IO, presenza/ready, invito, settings host e avvio a 3+.               |
 | 9. Partita                    | Da iniziare             | Flusso completo dei round.                                                         |
 | 10. Classifica e fine partita | Da iniziare             | Punteggi, risultato e replay.                                                      |
 | 11. Stato e sessioni          | Da iniziare             | Riconnessione e separazione stato server/UI.                                       |
@@ -161,4 +163,6 @@ Configura lo stesso `SOCKET_TICKET_SECRET` anche per Next.js. In produzione, `SO
 - Verifica Task 6: `npm run typecheck`, `npm run build`, `npm run lint`, 14 test realtime, 7 test room, Prettier e `git diff --check` passano.
 - Task 7: home italiana responsive con apertura stanza e ingresso via codice, nickname e avatar; usa gli endpoint reali, mantiene gli errori inline e porta alla route `/room/[code]`. La route mostra lo snapshot API autenticato e permette di copiare il codice o lasciare la stanza; gli aggiornamenti live e i controlli host restano alla Task 8.
 - Verifica Task 7: creazione provata nel browser fino a stanza e snapshot, uscita verificata; codice stanza inesistente mostra il messaggio previsto. A 390px non c'è overflow orizzontale. Typecheck, lint, build, 14 test realtime, 7 test room, Prettier e `git diff --check` passano.
+- Task 8: lobby modulare in `components/room/` con connessione Socket.IO autenticata da ticket, reconnect, snapshot live, presenza, stato ready, condivisione codice/link, impostazioni host salvate tramite evento `room:settings`, uscita e start protetto lato server (almeno 3 connessi). La lobby riceve `game:started`; la schermata di gioco è implementata nella Task 9.
+- Verifica Task 8: browser end-to-end con host e 2 guest autenticati; verificati join/broadcast, ready, salvataggio e broadcast settings, start abilitato a 3 e disabilitato dopo le disconnessioni. Il server ha aggiornato lo stato disconnected in tempo reale. Il test non ha avviato la partita e la stanza temporanea è stata rimossa. Typecheck, lint, build, 15 test realtime, 7 test room, Prettier e `git diff --check` passano.
 - Nota dipendenze: `npm install` ha riportato vulnerabilità nel dependency tree, da valutare senza aggiornamenti automatici non revisionati.

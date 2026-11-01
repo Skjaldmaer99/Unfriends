@@ -352,6 +352,66 @@ function registerRoomEvents(
     })
   })
 
+  socket.on("room:settings", (payload, ack) => {
+    void runAction(socket, ack, async () => {
+      const parsed = clientEventSchemas["room:settings"].parse(payload)
+      const database = getDatabase()
+
+      await database.transaction(async (transaction) => {
+        const [room] = await transaction
+          .select({ id: rooms.id, status: rooms.status })
+          .from(rooms)
+          .where(eq(rooms.code, socket.data.roomCode))
+          .for("update")
+
+        if (!room) {
+          throw new RoomServiceError(
+            "ROOM_NOT_FOUND",
+            "Room code was not found."
+          )
+        }
+        if (room.status !== "waiting") {
+          throw new RoomServiceError(
+            "ROOM_UNAVAILABLE",
+            "Settings can only change before the game starts."
+          )
+        }
+
+        const [host] = await transaction
+          .select({ isHost: players.isHost })
+          .from(players)
+          .where(
+            and(
+              eq(players.id, socket.data.playerId),
+              eq(players.roomId, room.id)
+            )
+          )
+          .limit(1)
+
+        if (!host) {
+          throw new RoomServiceError(
+            "UNAUTHORIZED",
+            "Player session does not belong to this room."
+          )
+        }
+        if (!host.isHost) {
+          throw new RoomServiceError(
+            "HOST_REQUIRED",
+            "Only the host can change game settings."
+          )
+        }
+
+        await transaction
+          .update(rooms)
+          .set({ settings: parsed.settings, updatedAt: new Date() })
+          .where(eq(rooms.id, room.id))
+      })
+
+      await broadcastRoom(io, socket.data.roomCode)
+      return { updated: true } as const
+    })
+  })
+
   socket.on("player:ready", (payload, ack) => {
     void runAction(socket, ack, async () => {
       const parsed = clientEventSchemas["player:ready"].parse(payload)

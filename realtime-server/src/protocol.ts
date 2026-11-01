@@ -1,5 +1,6 @@
 import { z } from "zod"
 
+import { GameSettingsSchema, type GameSettings } from "./game/types.js"
 import type { PlayerGameView } from "./game/types.js"
 
 const roomCodeSchema = z.string().regex(/^[A-HJ-NP-Z2-9]{6}$/)
@@ -7,6 +8,7 @@ const roomCodeSchema = z.string().regex(/^[A-HJ-NP-Z2-9]{6}$/)
 export const clientEventSchemas = {
   "room:leave": z.object({}).strict(),
   "room:start": z.object({}).strict(),
+  "room:settings": z.object({ settings: GameSettingsSchema }).strict(),
   "player:ready": z.object({ ready: z.boolean() }).strict(),
   "answer:submit": z
     .object({ content: z.string().trim().min(1).max(240) })
@@ -29,12 +31,7 @@ export interface RoomSnapshot {
   status: "waiting" | "in_progress" | "finished"
   maxPlayers: number
   playerCount: number
-  settings: {
-    roundsPerPlayer: number
-    answerTimeLimitSeconds: number
-    selectionTimeLimitSeconds: number
-    enabledCategories: string[]
-  }
+  settings: GameSettings
   players: SocketPlayerSummary[]
 }
 
@@ -61,6 +58,10 @@ export interface ClientToServerEvents {
   "room:start": (
     payload: Record<string, never>,
     ack: EventAck<{ started: true }>
+  ) => void
+  "room:settings": (
+    payload: { settings: GameSettings },
+    ack: EventAck<{ updated: true }>
   ) => void
   "player:ready": (
     payload: { ready: boolean },

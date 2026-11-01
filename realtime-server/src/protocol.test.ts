@@ -43,4 +43,28 @@ describe("realtime event schemas", () => {
       false
     )
   })
+
+  it("rejects room settings with no enabled question categories", () => {
+    const defaults = {
+      roundsPerPlayer: 2,
+      answerTimeLimitSeconds: 60,
+      selectionTimeLimitSeconds: 30,
+    }
+
+    assert.equal(
+      clientEventSchemas["room:settings"].safeParse({
+        settings: { ...defaults, enabledCategories: [] },
+      }).success,
+      false
+    )
+    assert.equal(
+      clientEventSchemas["room:settings"].safeParse({
+        settings: {
+          ...defaults,
+          enabledCategories: ["friendship", "fun"],
+        },
+      }).success,
+      true
+    )
+  })
 })

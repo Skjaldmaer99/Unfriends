@@ -12,6 +12,7 @@ interface PlayerCardProps {
   score: number
   isHost?: boolean
   isConnected?: boolean
+  isReady?: boolean
   isCurrentPlayer?: boolean
   className?: string
 }
@@ -34,6 +35,7 @@ function PlayerCard({
   score,
   isHost = false,
   isConnected = true,
+  isReady = false,
   isCurrentPlayer = false,
   className,
 }: PlayerCardProps) {
@@ -62,6 +64,7 @@ function PlayerCard({
               Host
             </Badge>
           )}
+          {isReady && <Badge variant="success">Pronto</Badge>}
         </div>
         <span className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
           <span
