@@ -82,6 +82,49 @@ export interface GameState {
   currentRound: GameRound
 }
 
+export const GameStateSnapshotSchema = z.object({
+  status: z.enum(["in_progress", "finished"]),
+  players: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        nickname: z.string().trim().min(1),
+        avatar: z.string().optional(),
+        score: z.number().int().nonnegative(),
+      })
+    )
+    .min(2),
+  settings: GameSettingsSchema,
+  questionBank: GameQuestionSchema.array().min(1),
+  usedQuestionIds: z.array(z.string().min(1)),
+  totalRounds: z.number().int().positive(),
+  currentRound: z.object({
+    id: z.string().min(1),
+    number: z.number().int().positive(),
+    protagonistId: z.string().min(1),
+    question: GameQuestionSchema,
+    phase: z.enum([
+      "protagonist_answer",
+      "players_answer",
+      "reveal",
+      "protagonist_selection",
+      "round_result",
+      "finished",
+    ]),
+    deadlineAt: z.number().finite().nonnegative().nullable(),
+    originalAnswer: z.string().nullable(),
+    answers: z.array(
+      z.object({
+        id: z.string().min(1),
+        playerId: z.string().min(1),
+        content: z.string().min(1).max(240),
+        createdAt: z.number().finite().nonnegative(),
+      })
+    ),
+    selectedAnswerId: z.string().nullable(),
+  }),
+})
+
 export interface PlayerAnswerView {
   id: string
   content: string

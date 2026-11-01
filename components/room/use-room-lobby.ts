@@ -94,6 +94,24 @@ function errorMessage(error: EventFailure): string {
   return messages[error.code] ?? error.error
 }
 
+function getAnswerPhase(view: PlayerGameView): LobbyState["answerPhase"] {
+  const phase = view.currentRound.phase
+  if (
+    phase !== "protagonist_answer" &&
+    phase !== "players_answer" &&
+    phase !== "protagonist_selection"
+  ) {
+    return null
+  }
+
+  return {
+    phase,
+    answerCount: view.currentRound.answerCount,
+    requiredAnswerCount: view.currentRound.requiredAnswerCount,
+    deadlineAt: view.currentRound.deadlineAt,
+  }
+}
+
 export function useRoomLobby(code: string) {
   const [state, setState] = useState(initialState)
   const socketRef = useRef<LobbySocket | null>(null)
@@ -268,6 +286,7 @@ export function useRoomLobby(code: string) {
               ...current,
               gameStarted: true,
               gameView: view,
+              answerPhase: getAnswerPhase(view),
             }))
           }
         })

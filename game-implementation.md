@@ -22,7 +22,7 @@ L'obiettivo principale è creare un'esperienza divertente, immediata, intuitiva 
 - [x] Task 8 – Lobby multiplayer
 - [x] Task 9 – Implementazione della partita
 - [x] Task 10 – Classifica e fine partita
-- [ ] Task 11 – Gestione dello stato e dei dati
+- [x] Task 11 – Gestione dello stato e dei dati
 - [ ] Task 12 – Sicurezza e validazione
 - [ ] Task 13 – Testing
 - [ ] Task 14 – Deployment

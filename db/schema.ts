@@ -150,6 +150,34 @@ export const questions = pgTable(
   ]
 )
 
+export const gameSessions = pgTable(
+  "game_sessions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    roomId: uuid("room_id")
+      .notNull()
+      .references(() => rooms.id, { onDelete: "cascade" }),
+    hostPlayerId: uuid("host_player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "restrict" }),
+    roundOffset: smallint("round_offset").notNull().default(0),
+    state: jsonb("state")
+      .$type<import("../realtime-server/src/game/types").GameState>()
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("game_sessions_room_id_idx").on(table.roomId),
+    check("game_sessions_round_offset_check", sql`${table.roundOffset} >= 0`),
+  ]
+)
+
 export const rounds = pgTable(
   "rounds",
   {
@@ -160,11 +188,15 @@ export const rounds = pgTable(
     questionId: uuid("question_id")
       .notNull()
       .references(() => questions.id, { onDelete: "restrict" }),
+    gameSessionId: uuid("game_session_id").references(() => gameSessions.id, {
+      onDelete: "cascade",
+    }),
     protagonistId: uuid("protagonist_id")
       .notNull()
       .references(() => players.id, { onDelete: "restrict" }),
     roundNumber: smallint("round_number").notNull(),
     status: roundStatusEnum("status").notNull().default("protagonist_answer"),
+    deadlineAt: timestamp("deadline_at", { withTimezone: true }),
     startedAt: timestamp("started_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

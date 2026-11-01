@@ -3,10 +3,11 @@ import {
   type Server as HttpServer,
 } from "node:http"
 import { Server as SocketServer, type Socket } from "socket.io"
-import { and, asc, eq, gt, inArray, lte, max } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, max } from "drizzle-orm"
 
 import {
   answers,
+  gameSessions,
   players,
   questions,
   rooms,
@@ -32,7 +33,7 @@ import {
 } from "./game/game-engine.js"
 import { buildGameSummary } from "./game/game-summary.js"
 import type { GameSummary } from "./game/game-summary.js"
-import type { GameState } from "./game/types.js"
+import { GameStateSnapshotSchema, type GameState } from "./game/types.js"
 import { clientEventSchemas } from "./protocol.js"
 import type {
   ClientToServerEvents,
@@ -56,6 +57,7 @@ interface ActiveGame {
   roomId: string
   roomCode: string
   hostPlayerId: string
+  sessionId: string
   state: GameState
   databaseRoundId: string
   roundOffset: number
@@ -67,6 +69,8 @@ interface RealtimeServerOptions {
 }
 
 const activeGames = new Map<string, ActiveGame>()
+const recoveringGames = new Map<string, Promise<ActiveGame | null>>()
+const roomActionQueues = new Map<string, Promise<void>>()
 const readyPlayers = new Map<string, Map<string, boolean>>()
 const revealTimers = new Map<string, NodeJS.Timeout>()
 const phaseTimers = new Map<string, NodeJS.Timeout>()
@@ -267,6 +271,19 @@ async function handleConnection(
     .where(eq(players.id, playerId))
 
   const snapshot = await getRoomSnapshot(roomCode)
+  const activeGame =
+    activeGames.get(roomCode) ?? (await restoreGameForRoom(io, roomCode))
+
+  registerRoomEvents(io, socket)
+  registerGameEvents(io, socket)
+  socket.on("disconnect", () => {
+    void handleDisconnection(io, socket, priorPlayer.nickname).catch(
+      (error: unknown) => {
+        console.error("Socket disconnection handling failed.", error)
+      }
+    )
+  })
+
   socket.emit("room:joined", snapshot)
   if (!alreadyConnected) {
     io.to(roomCode)
@@ -285,31 +302,23 @@ async function handleConnection(
     }))
   )
 
-  const activeGame = activeGames.get(roomCode)
   if (activeGame) {
     emitViewToSocket(socket, "game:state", activeGame.state)
     if (activeGame.state.status === "finished") {
       const summary = await buildPersistedGameSummary(activeGame)
       socket.emit("game:summary", summary)
     }
-  } else if (snapshot.status === "in_progress") {
+  } else if (
+    snapshot.status === "in_progress" ||
+    snapshot.status === "finished"
+  ) {
     socket.emit("room:error", {
       ok: false,
       code: "GAME_STATE_UNAVAILABLE",
       error:
-        "The active game state is unavailable. Recreate the room to continue.",
+        "The saved game state is unavailable. Contact the host to restart the room.",
     })
   }
-
-  registerRoomEvents(io, socket)
-  registerGameEvents(io, socket)
-  socket.on("disconnect", () => {
-    void handleDisconnection(io, socket, priorPlayer.nickname).catch(
-      (error: unknown) => {
-        console.error("Socket disconnection handling failed.", error)
-      }
-    )
-  })
 }
 
 function registerRoomEvents(
@@ -354,7 +363,7 @@ function registerRoomEvents(
       readyPlayers.delete(socket.data.roomCode)
       schedulePhaseTimeout(io, game)
       await broadcastRoom(io, socket.data.roomCode)
-      await emitGameViews(io, "game:started", game.state)
+      await emitGameViews(io, game.roomCode, "game:started", game.state)
       return { started: true } as const
     })
   })
@@ -548,8 +557,18 @@ function registerGameEvents(
           .returning({ id: answers.id })
         await transaction
           .update(rounds)
-          .set({ status: roundStatus })
+          .set({
+            status: roundStatus,
+            deadlineAt:
+              nextState.currentRound.deadlineAt === null
+                ? null
+                : new Date(nextState.currentRound.deadlineAt),
+          })
           .where(eq(rounds.id, game.databaseRoundId))
+        await transaction
+          .update(gameSessions)
+          .set({ state: nextState, updatedAt: new Date() })
+          .where(eq(gameSessions.id, game.sessionId))
         return [insertedAnswer]
       })
 
@@ -562,7 +581,7 @@ function registerGameEvents(
       if (nextState.currentRound.phase === "reveal") {
         game.state = nextState
         clearPhaseTimer(game.roomCode)
-        await emitGameViews(io, "round:reveal", nextState)
+        await emitGameViews(io, game.roomCode, "round:reveal", nextState)
         scheduleSelection(io, game)
       } else {
         game.state = nextState
@@ -607,13 +626,21 @@ function registerGameEvents(
         }
         await transaction
           .update(rounds)
-          .set({ status: "round_result", completedAt: new Date() })
+          .set({
+            status: "round_result",
+            deadlineAt: null,
+            completedAt: new Date(),
+          })
           .where(eq(rounds.id, game.databaseRoundId))
+        await transaction
+          .update(gameSessions)
+          .set({ state: nextState, updatedAt: new Date() })
+          .where(eq(gameSessions.id, game.sessionId))
       })
 
       game.state = nextState
       clearPhaseTimer(game.roomCode)
-      await emitGameViews(io, "round:completed", nextState)
+      await emitGameViews(io, game.roomCode, "round:completed", nextState)
       io.to(game.roomCode).emit(
         "score:updated",
         nextState.players.map(({ id, nickname, avatar, score }) => ({
@@ -644,8 +671,16 @@ function registerGameEvents(
         await database.transaction(async (transaction) => {
           await transaction
             .update(rounds)
-            .set({ status: "finished", completedAt: new Date() })
+            .set({
+              status: "finished",
+              deadlineAt: null,
+              completedAt: new Date(),
+            })
             .where(eq(rounds.id, game.databaseRoundId))
+          await transaction
+            .update(gameSessions)
+            .set({ state: nextState, updatedAt: new Date() })
+            .where(eq(gameSessions.id, game.sessionId))
           await transaction
             .update(rooms)
             .set({ status: "finished", updatedAt: new Date() })
@@ -653,7 +688,7 @@ function registerGameEvents(
         })
         game.state = nextState
         clearPhaseTimer(game.roomCode)
-        await emitGameViews(io, "game:completed", nextState)
+        await emitGameViews(io, game.roomCode, "game:completed", nextState)
         io.to(game.roomCode).emit(
           "game:summary",
           await buildPersistedGameSummary(game)
@@ -662,21 +697,32 @@ function registerGameEvents(
         return { finished: true }
       }
 
-      const [databaseRound] = await database
-        .insert(rounds)
-        .values({
-          roomId: game.roomId,
-          questionId: nextState.currentRound.question.id,
-          protagonistId: nextState.currentRound.protagonistId,
-          roundNumber: game.roundOffset + nextState.currentRound.number,
-          status: "protagonist_answer",
-        })
-        .returning({ id: rounds.id })
+      const [databaseRound] = await database.transaction(
+        async (transaction) => {
+          const [insertedRound] = await transaction
+            .insert(rounds)
+            .values({
+              roomId: game.roomId,
+              gameSessionId: game.sessionId,
+              questionId: nextState.currentRound.question.id,
+              protagonistId: nextState.currentRound.protagonistId,
+              roundNumber: game.roundOffset + nextState.currentRound.number,
+              status: "protagonist_answer",
+              deadlineAt: new Date(nextState.currentRound.deadlineAt!),
+            })
+            .returning({ id: rounds.id })
+          await transaction
+            .update(gameSessions)
+            .set({ state: nextState, updatedAt: new Date() })
+            .where(eq(gameSessions.id, game.sessionId))
+          return [insertedRound]
+        }
+      )
 
       game.state = nextState
       game.databaseRoundId = databaseRound.id
       game.answerIds.clear()
-      await emitGameViews(io, "round:started", nextState)
+      await emitGameViews(io, game.roomCode, "round:started", nextState)
       emitAnswerPhase(io, socket.data.roomCode, nextState)
       schedulePhaseTimeout(io, game)
       return { finished: false }
@@ -777,14 +823,25 @@ async function startGame(
       .from(rounds)
       .where(eq(rounds.roomId, room.id))
     const roundOffset = Number(lastRound.value ?? 0)
+    const [session] = await transaction
+      .insert(gameSessions)
+      .values({
+        roomId: room.id,
+        hostPlayerId,
+        roundOffset,
+        state,
+      })
+      .returning({ id: gameSessions.id })
     const [databaseRound] = await transaction
       .insert(rounds)
       .values({
         roomId: room.id,
+        gameSessionId: session.id,
         questionId: state.currentRound.question.id,
         protagonistId: state.currentRound.protagonistId,
         roundNumber: roundOffset + 1,
         status: "protagonist_answer",
+        deadlineAt: new Date(state.currentRound.deadlineAt!),
       })
       .returning({ id: rounds.id })
     await transaction
@@ -796,6 +853,7 @@ async function startGame(
       roomId: room.id,
       roomCode,
       hostPlayerId,
+      sessionId: session.id,
       state,
       databaseRoundId: databaseRound.id,
       roundOffset,
@@ -804,21 +862,134 @@ async function startGame(
   })
 }
 
+async function restoreGameForRoom(
+  io: SocketServer<
+    ClientToServerEvents,
+    ServerToClientEvents,
+    InterServerEvents,
+    SocketData
+  >,
+  roomCode: string
+): Promise<ActiveGame | null> {
+  const activeGame = activeGames.get(roomCode)
+  if (activeGame) return activeGame
+
+  const pendingRecovery = recoveringGames.get(roomCode)
+  if (pendingRecovery) return pendingRecovery
+
+  const recovery = (async () => {
+    const database = getDatabase()
+    const [session] = await database
+      .select({
+        id: gameSessions.id,
+        roomId: gameSessions.roomId,
+        hostPlayerId: gameSessions.hostPlayerId,
+        roundOffset: gameSessions.roundOffset,
+        state: gameSessions.state,
+        roomStatus: rooms.status,
+      })
+      .from(gameSessions)
+      .innerJoin(rooms, eq(gameSessions.roomId, rooms.id))
+      .where(eq(rooms.code, roomCode))
+      .orderBy(desc(gameSessions.createdAt))
+      .limit(1)
+
+    if (!session) return null
+
+    const state = GameStateSnapshotSchema.parse(session.state)
+    if ((session.roomStatus === "finished") !== (state.status === "finished")) {
+      throw new Error("Persisted room and game states do not match.")
+    }
+
+    const roundNumber = session.roundOffset + state.currentRound.number
+    const [databaseRound] = await database
+      .select({
+        id: rounds.id,
+        status: rounds.status,
+        protagonistId: rounds.protagonistId,
+        questionId: rounds.questionId,
+      })
+      .from(rounds)
+      .where(
+        and(
+          eq(rounds.gameSessionId, session.id),
+          eq(rounds.roundNumber, roundNumber)
+        )
+      )
+      .limit(1)
+
+    if (
+      !databaseRound ||
+      databaseRound.protagonistId !== state.currentRound.protagonistId ||
+      databaseRound.questionId !== state.currentRound.question.id ||
+      databaseRound.status !== state.currentRound.phase
+    ) {
+      throw new Error("Persisted current round does not match the game state.")
+    }
+
+    const persistedAnswers = await database
+      .select({
+        id: answers.id,
+        playerId: answers.playerId,
+        isOriginalAnswer: answers.isOriginalAnswer,
+      })
+      .from(answers)
+      .where(eq(answers.roundId, databaseRound.id))
+    const databaseAnswerByPlayer = new Map(
+      persistedAnswers
+        .filter((answer) => !answer.isOriginalAnswer)
+        .map((answer) => [answer.playerId, answer.id])
+    )
+    const answerIds = new Map<string, string>()
+    for (const answer of state.currentRound.answers) {
+      const databaseAnswerId = databaseAnswerByPlayer.get(answer.playerId)
+      if (!databaseAnswerId) {
+        throw new Error("Persisted game answer is missing from the database.")
+      }
+      answerIds.set(answer.id, databaseAnswerId)
+    }
+
+    const game: ActiveGame = {
+      roomId: session.roomId,
+      roomCode,
+      hostPlayerId: session.hostPlayerId,
+      sessionId: session.id,
+      state,
+      databaseRoundId: databaseRound.id,
+      roundOffset: session.roundOffset,
+      answerIds,
+    }
+    activeGames.set(roomCode, game)
+
+    if (state.status === "in_progress") {
+      if (state.currentRound.phase === "reveal") {
+        scheduleSelection(io, game)
+      } else {
+        schedulePhaseTimeout(io, game)
+      }
+    }
+
+    return game
+  })()
+
+  recoveringGames.set(roomCode, recovery)
+  try {
+    return await recovery
+  } finally {
+    if (recoveringGames.get(roomCode) === recovery) {
+      recoveringGames.delete(roomCode)
+    }
+  }
+}
+
 async function buildPersistedGameSummary(
   game: ActiveGame
 ): Promise<GameSummary> {
   const database = getDatabase()
-  const lastRoundNumber = game.roundOffset + game.state.totalRounds
   const gameRounds = await database
     .select({ id: rounds.id, protagonistId: rounds.protagonistId })
     .from(rounds)
-    .where(
-      and(
-        eq(rounds.roomId, game.roomId),
-        gt(rounds.roundNumber, game.roundOffset),
-        lte(rounds.roundNumber, lastRoundNumber)
-      )
-    )
+    .where(eq(rounds.gameSessionId, game.sessionId))
   const roundIds = gameRounds.map((round) => round.id)
 
   if (roundIds.length === 0) {
@@ -883,9 +1054,19 @@ function scheduleSelection(
     try {
       const selectionState = beginSelection(currentGame.state)
       void getDatabase()
-        .update(rounds)
-        .set({ status: "protagonist_selection" })
-        .where(eq(rounds.id, currentGame.databaseRoundId))
+        .transaction(async (transaction) => {
+          await transaction
+            .update(rounds)
+            .set({
+              status: "protagonist_selection",
+              deadlineAt: new Date(selectionState.currentRound.deadlineAt!),
+            })
+            .where(eq(rounds.id, currentGame.databaseRoundId))
+          await transaction
+            .update(gameSessions)
+            .set({ state: selectionState, updatedAt: new Date() })
+            .where(eq(gameSessions.id, currentGame.sessionId))
+        })
         .then(() => {
           currentGame.state = selectionState
           emitAnswerPhase(io, currentGame.roomCode, selectionState)
@@ -965,12 +1146,18 @@ async function persistExpiredPhase(
 ): Promise<void> {
   const database = getDatabase()
   if (expiredState.currentRound.phase === "reveal") {
-    await database
-      .update(rounds)
-      .set({ status: "reveal" })
-      .where(eq(rounds.id, game.databaseRoundId))
+    await database.transaction(async (transaction) => {
+      await transaction
+        .update(rounds)
+        .set({ status: "reveal", deadlineAt: null })
+        .where(eq(rounds.id, game.databaseRoundId))
+      await transaction
+        .update(gameSessions)
+        .set({ state: expiredState, updatedAt: new Date() })
+        .where(eq(gameSessions.id, game.sessionId))
+    })
     game.state = expiredState
-    await emitGameViews(io, "round:reveal", expiredState)
+    await emitGameViews(io, game.roomCode, "round:reveal", expiredState)
     scheduleSelection(io, game)
     return
   }
@@ -984,13 +1171,21 @@ async function persistExpiredPhase(
     }
     await transaction
       .update(rounds)
-      .set({ status: "round_result", completedAt: new Date() })
+      .set({
+        status: "round_result",
+        deadlineAt: null,
+        completedAt: new Date(),
+      })
       .where(eq(rounds.id, game.databaseRoundId))
+    await transaction
+      .update(gameSessions)
+      .set({ state: expiredState, updatedAt: new Date() })
+      .where(eq(gameSessions.id, game.sessionId))
   })
 
   game.state = expiredState
   clearPhaseTimer(game.roomCode)
-  await emitGameViews(io, "round:completed", expiredState)
+  await emitGameViews(io, game.roomCode, "round:completed", expiredState)
   io.to(game.roomCode).emit(
     "score:updated",
     expiredState.players.map(({ id, nickname, avatar, score }) => ({
@@ -1044,15 +1239,6 @@ function emitAnswerPhase(
   })
 }
 
-function roomCodeForState(state: GameState): string {
-  for (const [roomCode, game] of activeGames) {
-    if (game.state === state) {
-      return roomCode
-    }
-  }
-  return ""
-}
-
 async function emitGameViews(
   io: SocketServer<
     ClientToServerEvents,
@@ -1060,6 +1246,7 @@ async function emitGameViews(
     InterServerEvents,
     SocketData
   >,
+  roomCode: string,
   event:
     | "game:started"
     | "game:state"
@@ -1069,7 +1256,6 @@ async function emitGameViews(
     | "game:completed",
   state: GameState
 ): Promise<void> {
-  const roomCode = roomCodeForState(state)
   const sockets = await io.in(roomCode).fetchSockets()
   for (const socket of sockets) {
     emitViewToSocket(socket, event, state)
@@ -1213,7 +1399,7 @@ async function handleDisconnection(
   await broadcastRoom(io, roomCode)
   const game = activeGames.get(roomCode)
   if (game) {
-    await emitGameViews(io, "game:state", game.state)
+    await emitGameViews(io, roomCode, "game:state", game.state)
   }
 }
 
@@ -1233,18 +1419,27 @@ async function runAction<T>(
   ack: EventAck<T>,
   action: () => Promise<T>
 ): Promise<void> {
-  try {
-    const data = await action()
-    const success: EventSuccess<T> = { ok: true, data }
-    if (typeof ack === "function") {
-      ack(success)
+  const roomCode = socket.data.roomCode
+  const previous = roomActionQueues.get(roomCode) ?? Promise.resolve()
+  const current = previous.then(async () => {
+    try {
+      const data = await action()
+      const success: EventSuccess<T> = { ok: true, data }
+      if (typeof ack === "function") {
+        ack(success)
+      }
+    } catch (error) {
+      const failure = toEventFailure(error)
+      socket.emit("room:error", failure)
+      if (typeof ack === "function") {
+        ack(failure)
+      }
     }
-  } catch (error) {
-    const failure = toEventFailure(error)
-    socket.emit("room:error", failure)
-    if (typeof ack === "function") {
-      ack(failure)
-    }
+  })
+  roomActionQueues.set(roomCode, current)
+  await current
+  if (roomActionQueues.get(roomCode) === current) {
+    roomActionQueues.delete(roomCode)
   }
 }
 
