@@ -9,6 +9,26 @@ L'applicazione deve permettere a gruppi di amici di creare stanze private, invit
 
 L'obiettivo principale è creare un'esperienza divertente, immediata, intuitiva e facilmente rigiocabile.
 
+## Avanzamento MVP
+
+- [x] Task 0 – Analisi del progetto e organizzazione
+- [x] Task 1 – Configurazione dello stack tecnologico
+- [ ] Task 2 – Definizione del gameplay
+- [ ] Task 3 – Database e modellazione dei dati
+- [ ] Task 4 – Sistema di gestione delle stanze
+- [ ] Task 5 – Server realtime con Socket.IO
+- [ ] Task 6 – Design system e interfaccia
+- [ ] Task 7 – Pagina home
+- [ ] Task 8 – Lobby multiplayer
+- [ ] Task 9 – Implementazione della partita
+- [ ] Task 10 – Classifica e fine partita
+- [ ] Task 11 – Gestione dello stato e dei dati
+- [ ] Task 12 – Sicurezza e validazione
+- [ ] Task 13 – Testing
+- [ ] Task 14 – Deployment
+
+La Task 15 è esplicitamente fuori dall'MVP e non va implementata in questa fase.
+
 ---
 
 # TASK 0 – ANALISI DEL PROGETTO E ORGANIZZAZIONE
@@ -882,6 +902,8 @@ Non inserire mai credenziali reali nel repository.
 ---
 
 # TASK 15 – FUNZIONALITÀ FUTURE (NON IMPLEMENTARE NELL'MVP)
+
+**Stato: fuori ambito MVP; non implementare in questa fase.**
 
 Prepara l'architettura in modo da poter aggiungere successivamente:
 
