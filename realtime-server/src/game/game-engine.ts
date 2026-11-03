@@ -320,9 +320,10 @@ export function expireCurrentPhase(
         return resolveAbsurdVotes(state, round.votes)
     }
 
+    const selectorPoints = getGameModeDefinition(state.settings.mode).scoring.selectorPoints
     const players = state.players.map((player) =>
         player.id === round.protagonistId
-            ? { ...player, score: player.score + 1 }
+            ? { ...player, score: player.score + selectorPoints }
             : player
     )
 

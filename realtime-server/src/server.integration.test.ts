@@ -10,9 +10,13 @@ config({ path: fileURLToPath(new URL("../../.env.local", import.meta.url)) })
 
 import {
     answers,
+    bluffQuestions,
+    gamePrompts,
     players,
     rooms,
     rounds,
+    secretCharacterRoles,
+    secretCharacterScenarios,
     votes,
     gameSessions,
 } from "../../db/schema.js"
@@ -270,6 +274,68 @@ describe(
     "authenticated multiplayer integration",
     { skip: !integrationEnabled },
     () => {
+        it("stores categorized prompts, sourced facts, and structured secret roles", async () => {
+            const database = getDatabase()
+            const prompts = await database
+                .select({ mode: gamePrompts.mode, category: gamePrompts.category })
+                .from(gamePrompts)
+                .where(
+                    and(
+                        eq(gamePrompts.isActive, true),
+                        inArray(gamePrompts.mode, [
+                            "absurd_situations",
+                            "who_among_us",
+                        ])
+                    )
+                )
+            assert.ok(
+                prompts.some((prompt) => prompt.mode === "absurd_situations")
+            )
+            assert.ok(prompts.some((prompt) => prompt.mode === "who_among_us"))
+            assert.ok(
+                prompts.some((prompt) => prompt.category === "travel")
+            )
+
+            const facts = await database
+                .select({
+                    text: bluffQuestions.text,
+                    correctAnswer: bluffQuestions.correctAnswer,
+                    explanation: bluffQuestions.explanation,
+                    sourceUrl: bluffQuestions.sourceUrl,
+                })
+                .from(bluffQuestions)
+                .where(eq(bluffQuestions.isActive, true))
+            assert.ok(facts.length > 0)
+            assert.ok(
+                facts.every(
+                    (fact) =>
+                        fact.correctAnswer.length > 0 &&
+                        fact.explanation.length > 0 &&
+                        fact.sourceUrl.startsWith("https://")
+                )
+            )
+
+            const scenarios = await database
+                .select({
+                    id: secretCharacterScenarios.id,
+                    minPlayers: secretCharacterScenarios.minPlayers,
+                })
+                .from(secretCharacterScenarios)
+                .where(eq(secretCharacterScenarios.isActive, true))
+            assert.ok(scenarios.length > 0)
+            for (const scenario of scenarios) {
+                const roles = await database
+                    .select({ position: secretCharacterRoles.position })
+                    .from(secretCharacterRoles)
+                    .where(eq(secretCharacterRoles.scenarioId, scenario.id))
+                assert.ok(roles.length >= scenario.minPlayers)
+                assert.equal(
+                    new Set(roles.map((role) => role.position)).size,
+                    roles.length
+                )
+            }
+        })
+
         it("plays an anonymous absurd-situations vote and resolves a three-way tie", async (testContext) => {
             const scopedSockets = new Set<TestSocket>()
             testContext.after(async () => {
@@ -303,12 +369,25 @@ describe(
             const settingsResult = await emitRoomSettings(hostSocket, {
                 ...roomSettings.settings,
                 mode: "absurd_situations",
+                enabledCategories: ["friendship"],
             })
             assert.deepEqual(settingsResult, { ok: true, data: { updated: true } })
             const updatedRooms = await Promise.all(modeUpdates)
             assert.ok(
                 updatedRooms.every(
                     (snapshot) => snapshot.settings.mode === "absurd_situations"
+                )
+            )
+            assert.ok(
+                updatedRooms.every((snapshot) =>
+                    snapshot.settings.enabledCategories.every((category) =>
+                        [
+                            "absurd",
+                            "everyday_life",
+                            "fantasy",
+                            "impossible_situations",
+                        ].includes(category)
+                    )
                 )
             )
 

@@ -1,160 +1,187 @@
 import type { GamePlayer } from "./types.js"
 
 export interface SummaryRoundRecord {
-  id: string
-  protagonistId: string
+    id: string
+    protagonistId: string
 }
 
 export interface SummaryAnswerRecord {
-  id: string
-  roundId: string
-  playerId: string
-  content: string
-  isOriginalAnswer: boolean
+    id: string
+    roundId: string
+    playerId: string
+    content: string
+    isOriginalAnswer: boolean
 }
 
 export interface SummaryVoteRecord {
-  roundId: string
-  selectedAnswerId: string
+    roundId: string
+    selectedAnswerId: string
 }
 
 export interface SummaryInput {
-  players: readonly GamePlayer[]
-  rounds: readonly SummaryRoundRecord[]
-  answers: readonly SummaryAnswerRecord[]
-  votes: readonly SummaryVoteRecord[]
+    players: readonly GamePlayer[]
+    rounds: readonly SummaryRoundRecord[]
+    answers: readonly SummaryAnswerRecord[]
+    votes: readonly SummaryVoteRecord[]
 }
 
 export interface GameRecognition {
-  title: string
-  playerId: string
-  nickname: string
-  detail: string
+    title: string
+    playerId: string
+    nickname: string
+    detail: string
 }
 
 export interface GameSummary {
-  roundsPlayed: number
-  answersSubmitted: number
-  originalAnswersGuessedExactly: number
-  exactGuessPercentage: number
-  recognitions: GameRecognition[]
+    roundsPlayed: number
+    answersSubmitted: number
+    votesCast: number
+    winningVotes: number
+    winningAnswers: number
+    originalAnswersGuessedExactly: number
+    exactGuessPercentage: number
+    recognitions: GameRecognition[]
 }
 
 export function buildGameSummary(input: SummaryInput): GameSummary {
-  const answersById = new Map(
-    input.answers.map((answer) => [answer.id, answer])
-  )
-  const answersByRound = new Map<string, SummaryAnswerRecord[]>()
-  const exactMatchesByPlayer = new Map<string, number>()
-  const protagonistRoundsByPlayer = new Map<string, number>()
-  const selectedAnswersByPlayer = new Map<string, number>()
-
-  for (const answer of input.answers) {
-    const roundAnswers = answersByRound.get(answer.roundId) ?? []
-    roundAnswers.push(answer)
-    answersByRound.set(answer.roundId, roundAnswers)
-  }
-
-  let exactMatches = 0
-  for (const round of input.rounds) {
-    protagonistRoundsByPlayer.set(
-      round.protagonistId,
-      (protagonistRoundsByPlayer.get(round.protagonistId) ?? 0) + 1
+    const answersById = new Map(
+        input.answers.map((answer) => [answer.id, answer])
     )
+    const answersByRound = new Map<string, SummaryAnswerRecord[]>()
+    const exactMatchesByPlayer = new Map<string, number>()
+    const protagonistRoundsByPlayer = new Map<string, number>()
+    const selectedAnswersByPlayer = new Map<string, number>()
+    const votesByRound = new Map<string, Map<string, number>>()
 
-    const roundAnswers = answersByRound.get(round.id) ?? []
-    const original = roundAnswers.find((answer) => answer.isOriginalAnswer)
-    if (!original) continue
+    for (const answer of input.answers) {
+        const roundAnswers = answersByRound.get(answer.roundId) ?? []
+        roundAnswers.push(answer)
+        answersByRound.set(answer.roundId, roundAnswers)
+    }
 
-    const originalWasGuessed = roundAnswers.some(
-      (answer) =>
-        !answer.isOriginalAnswer &&
-        normalizeAnswer(answer.content) === normalizeAnswer(original.content)
+    let exactMatches = 0
+    for (const round of input.rounds) {
+        protagonistRoundsByPlayer.set(
+            round.protagonistId,
+            (protagonistRoundsByPlayer.get(round.protagonistId) ?? 0) + 1
+        )
+
+        const roundAnswers = answersByRound.get(round.id) ?? []
+        const original = roundAnswers.find((answer) => answer.isOriginalAnswer)
+        if (!original) continue
+
+        const originalWasGuessed = roundAnswers.some(
+            (answer) =>
+                !answer.isOriginalAnswer &&
+                normalizeAnswer(answer.content) === normalizeAnswer(original.content)
+        )
+        if (originalWasGuessed) {
+            exactMatches += 1
+            exactMatchesByPlayer.set(
+                round.protagonistId,
+                (exactMatchesByPlayer.get(round.protagonistId) ?? 0) + 1
+            )
+        }
+    }
+
+    for (const vote of input.votes) {
+        const roundVotes = votesByRound.get(vote.roundId) ?? new Map<string, number>()
+        roundVotes.set(
+            vote.selectedAnswerId,
+            (roundVotes.get(vote.selectedAnswerId) ?? 0) + 1
+        )
+        votesByRound.set(vote.roundId, roundVotes)
+
+        const selected = answersById.get(vote.selectedAnswerId)
+        if (!selected || selected.isOriginalAnswer) continue
+        selectedAnswersByPlayer.set(
+            selected.playerId,
+            (selectedAnswersByPlayer.get(selected.playerId) ?? 0) + 1
+        )
+    }
+
+    const winningAnswerIds = new Set<string>()
+    for (const roundVotes of votesByRound.values()) {
+        const highestVoteCount = Math.max(0, ...roundVotes.values())
+        for (const [answerId, voteCount] of roundVotes) {
+            if (voteCount === highestVoteCount && voteCount > 0) {
+                winningAnswerIds.add(answerId)
+            }
+        }
+    }
+    const winningVotes = input.votes.filter((vote) =>
+        winningAnswerIds.has(vote.selectedAnswerId)
+    ).length
+
+    const recognitions: GameRecognition[] = []
+    const mostSelected = findLeaders(
+        input.players,
+        (player) => selectedAnswersByPlayer.get(player.id) ?? 0
     )
-    if (originalWasGuessed) {
-      exactMatches += 1
-      exactMatchesByPlayer.set(
-        round.protagonistId,
-        (exactMatchesByPlayer.get(round.protagonistId) ?? 0) + 1
-      )
+    if (mostSelected.value > 0) {
+        for (const player of mostSelected.players) {
+            recognitions.push({
+                title: "Miglior osservatore",
+                playerId: player.id,
+                nickname: player.nickname,
+                detail: `${mostSelected.value} risposte scelte`,
+            })
+        }
     }
-  }
 
-  for (const vote of input.votes) {
-    const selected = answersById.get(vote.selectedAnswerId)
-    if (!selected || selected.isOriginalAnswer) continue
-    selectedAnswersByPlayer.set(
-      selected.playerId,
-      (selectedAnswersByPlayer.get(selected.playerId) ?? 0) + 1
-    )
-  }
-
-  const recognitions: GameRecognition[] = []
-  const mostSelected = findLeaders(
-    input.players,
-    (player) => selectedAnswersByPlayer.get(player.id) ?? 0
-  )
-  if (mostSelected.value > 0) {
-    for (const player of mostSelected.players) {
-      recognitions.push({
-        title: "Miglior osservatore",
-        playerId: player.id,
-        nickname: player.nickname,
-        detail: `${mostSelected.value} risposte scelte`,
-      })
+    const hardestToGuess = findLeaders(input.players, (player) => {
+        const protagonistRounds = protagonistRoundsByPlayer.get(player.id) ?? 0
+        const guessed = exactMatchesByPlayer.get(player.id) ?? 0
+        return Math.max(0, protagonistRounds - guessed)
+    })
+    if (hardestToGuess.value > 0) {
+        for (const player of hardestToGuess.players) {
+            const protagonistRounds = protagonistRoundsByPlayer.get(player.id) ?? 0
+            const guessed = exactMatchesByPlayer.get(player.id) ?? 0
+            recognitions.push({
+                title: "Il più difficile da indovinare",
+                playerId: player.id,
+                nickname: player.nickname,
+                detail: `${guessed} risposte esatte su ${protagonistRounds}`,
+            })
+        }
     }
-  }
 
-  const hardestToGuess = findLeaders(input.players, (player) => {
-    const protagonistRounds = protagonistRoundsByPlayer.get(player.id) ?? 0
-    const guessed = exactMatchesByPlayer.get(player.id) ?? 0
-    return Math.max(0, protagonistRounds - guessed)
-  })
-  if (hardestToGuess.value > 0) {
-    for (const player of hardestToGuess.players) {
-      const protagonistRounds = protagonistRoundsByPlayer.get(player.id) ?? 0
-      const guessed = exactMatchesByPlayer.get(player.id) ?? 0
-      recognitions.push({
-        title: "Il più difficile da indovinare",
-        playerId: player.id,
-        nickname: player.nickname,
-        detail: `${guessed} risposte esatte su ${protagonistRounds}`,
-      })
+    return {
+        roundsPlayed: input.rounds.length,
+        answersSubmitted: input.answers.length,
+        votesCast: input.votes.length,
+        winningVotes,
+        winningAnswers: winningAnswerIds.size,
+        originalAnswersGuessedExactly: exactMatches,
+        exactGuessPercentage:
+            input.rounds.length === 0
+                ? 0
+                : Math.round((exactMatches / input.rounds.length) * 100),
+        recognitions,
     }
-  }
-
-  return {
-    roundsPlayed: input.rounds.length,
-    answersSubmitted: input.answers.length,
-    originalAnswersGuessedExactly: exactMatches,
-    exactGuessPercentage:
-      input.rounds.length === 0
-        ? 0
-        : Math.round((exactMatches / input.rounds.length) * 100),
-    recognitions,
-  }
 }
 
 function normalizeAnswer(answer: string): string {
-  return answer.normalize("NFKC").trim().toLocaleLowerCase("it-IT")
+    return answer.normalize("NFKC").trim().toLocaleLowerCase("it-IT")
 }
 
 function findLeaders(
-  players: readonly GamePlayer[],
-  valueForPlayer: (player: GamePlayer) => number
+    players: readonly GamePlayer[],
+    valueForPlayer: (player: GamePlayer) => number
 ): { value: number; players: GamePlayer[] } {
-  let highest = 0
-  let leaders: GamePlayer[] = []
+    let highest = 0
+    let leaders: GamePlayer[] = []
 
-  for (const player of players) {
-    const value = valueForPlayer(player)
-    if (value > highest) {
-      highest = value
-      leaders = [player]
-    } else if (value === highest && value > 0) {
-      leaders.push(player)
+    for (const player of players) {
+        const value = valueForPlayer(player)
+        if (value > highest) {
+            highest = value
+            leaders = [player]
+        } else if (value === highest && value > 0) {
+            leaders.push(player)
+        }
     }
-  }
 
-  return { value: highest, players: leaders }
+    return { value: highest, players: leaders }
 }

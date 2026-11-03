@@ -6,7 +6,9 @@ import {
     CHAOS_EVENT_DEFINITIONS,
     GAME_MODE_DEFINITIONS,
     getGameModeDefinition,
+    normalizeGameSettingsForMode,
 } from "./game-modes.js"
+import { GameSettingsSchema } from "./types.js"
 
 describe("game mode registry", () => {
     it("keeps ids unique and requires a shared 3-8 player range", () => {
@@ -33,6 +35,25 @@ describe("game mode registry", () => {
                     mode.scoring.winningVoteBonus >= 0 &&
                     mode.completionCondition.length > 0
             )
+        )
+    })
+
+    it("falls back to categories available for the selected mode", () => {
+        const legacySettings = GameSettingsSchema.parse({
+            mode: "absurd_situations",
+            enabledCategories: ["friendship"],
+        })
+
+        assert.deepEqual(
+            normalizeGameSettingsForMode(legacySettings).enabledCategories,
+            getGameModeDefinition("absurd_situations").categories
+        )
+        assert.deepEqual(
+            normalizeGameSettingsForMode({
+                ...legacySettings,
+                enabledCategories: ["absurd", "friendship"],
+            }).enabledCategories,
+            ["absurd"]
         )
     })
 

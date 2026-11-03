@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import {
     GAME_MODE_DEFINITIONS,
+    getGameModeDefinition,
     type GameModeDefinition,
 } from "@/realtime-server/src/game/game-modes"
 import {
@@ -33,6 +34,13 @@ const categoryLabels: Record<(typeof QUESTION_CATEGORIES)[number], string> = {
     hypotheticals: "Situazioni ipotetiche",
     relationships: "Relazioni",
     fun: "Divertimento",
+    absurd: "Assurde",
+    everyday_life: "Quotidianità",
+    travel: "Viaggi",
+    general_knowledge: "Cultura generale",
+    embarrassing: "Imbarazzanti",
+    fantasy: "Fantasia",
+    impossible_situations: "Situazioni impossibili",
 }
 
 const gameModeIcons: Record<GameModeDefinition["icon"], LucideIcon> = {
@@ -60,6 +68,7 @@ function GameSettingsPanel({
         GameSettingsSchema.parse(settings)
     )
     const [error, setError] = useState("")
+    const availableCategories = getGameModeDefinition(draft.mode).categories
 
     function updateCategory(
         category: GameSettings["enabledCategories"][number],
@@ -69,7 +78,11 @@ function GameSettingsPanel({
             ? [...new Set([...draft.enabledCategories, category])]
             : draft.enabledCategories.filter((item) => item !== category)
 
-        if (enabledCategories.length === 0) {
+        if (
+            !enabledCategories.some((item) =>
+                availableCategories.includes(item)
+            )
+        ) {
             setError("Lascia attiva almeno una categoria.")
             return
         }
@@ -79,7 +92,11 @@ function GameSettingsPanel({
     }
 
     async function submitSettings() {
-        if (draft.enabledCategories.length === 0) {
+        if (
+            !draft.enabledCategories.some((category) =>
+                availableCategories.includes(category)
+            )
+        ) {
             setError("Lascia attiva almeno una categoria.")
             return
         }
@@ -87,7 +104,25 @@ function GameSettingsPanel({
         await onSave(draft)
     }
 
-    const enabledCount = draft.enabledCategories.length
+    const enabledCount = draft.enabledCategories.filter((category) =>
+        availableCategories.includes(category)
+    ).length
+
+    function selectMode(modeId: GameSettings["mode"]) {
+        const modeCategories = getGameModeDefinition(modeId).categories
+        const preservedCategories = draft.enabledCategories.filter((category) =>
+            modeCategories.includes(category)
+        )
+        setError("")
+        setDraft({
+            ...draft,
+            mode: modeId,
+            enabledCategories:
+                preservedCategories.length > 0
+                    ? preservedCategories
+                    : [...modeCategories],
+        })
+    }
 
     return (
         <section
@@ -190,7 +225,7 @@ function GameSettingsPanel({
                             mode={mode}
                             selected={draft.mode === mode.id}
                             disabled={disabled || saving || mode.status !== "available"}
-                            onSelect={() => setDraft({ ...draft, mode: mode.id })}
+                            onSelect={() => selectMode(mode.id)}
                         />
                     ))}
                 </div>
@@ -200,17 +235,17 @@ function GameSettingsPanel({
                 <div className="flex items-center justify-between gap-3">
                     <h3 className="text-sm font-semibold">Categorie</h3>
                     <span className="text-xs text-muted-foreground">
-                        {enabledCount} di {QUESTION_CATEGORIES.length}
+                        {enabledCount} di {availableCategories.length}
                     </span>
                 </div>
                 <Progress
                     value={enabledCount}
-                    max={QUESTION_CATEGORIES.length}
+                    max={availableCategories.length}
                     label="Categorie attive"
                     className="h-1.5"
                 />
                 <div className="grid gap-2 sm:grid-cols-2">
-                    {QUESTION_CATEGORIES.map((category, index) => {
+                    {availableCategories.map((category, index) => {
                         const checked = draft.enabledCategories.includes(category)
                         return (
                             <label

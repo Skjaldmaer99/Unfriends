@@ -9,6 +9,13 @@ export const QUESTION_CATEGORIES = [
     "hypotheticals",
     "relationships",
     "fun",
+    "absurd",
+    "everyday_life",
+    "travel",
+    "general_knowledge",
+    "embarrassing",
+    "fantasy",
+    "impossible_situations",
 ] as const
 
 export const QuestionCategorySchema = z.enum(QUESTION_CATEGORIES)

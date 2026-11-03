@@ -775,7 +775,7 @@ Non mostrare impostazioni che non hanno effetto sulla modalità selezionata.
 
 Permettere a tutte le modalità di utilizzare un sistema coerente di punteggio.
 
-### Sottotask 6.1 – Punteggio centralizzato
+### Sottotask 6.1 – Punteggio centralizzato [x]
 
 Verifica il sistema attuale e crea una gestione centralizzata delle assegnazioni dei punti.
 
@@ -783,7 +783,7 @@ Le singole modalità devono poter definire le proprie regole, ma non devono dupl
 
 Il backend deve essere l'unica autorità nell'assegnazione dei punti.
 
-### Sottotask 6.2 – Classifica
+### Sottotask 6.2 – Classifica [x]
 
 La classifica deve:
 
@@ -793,7 +793,7 @@ La classifica deve:
 - Aggiornare i punteggi dopo ogni round.
 - Mostrare il risultato finale della partita.
 
-### Sottotask 6.3 – Risultati finali
+### Sottotask 6.3 – Risultati finali [x]
 
 Alla fine della partita mostra:
 
@@ -804,7 +804,7 @@ Alla fine della partita mostra:
 
 Mantieni uno stile grafico coerente con il resto dell'applicazione.
 
-### Sottotask 6.4 – Nuova partita
+### Sottotask 6.4 – Nuova partita [x]
 
 Dalla schermata dei risultati l'host deve poter:
 
@@ -823,7 +823,7 @@ Gli altri giocatori devono ricevere l'aggiornamento senza dover uscire e rientra
 
 Creare una gestione ordinata dei contenuti utilizzati dalle diverse modalità.
 
-### Sottotask 7.1 – Domande e situazioni
+### Sottotask 7.1 – Domande e situazioni [x]
 
 Organizza i contenuti in modo che possano essere associati alla modalità corretta.
 
@@ -835,7 +835,7 @@ Prevedi:
 - Domande "Chi tra noi?".
 - Scenari per i personaggi segreti.
 
-### Sottotask 7.2 – Categorie
+### Sottotask 7.2 – Categorie [x]
 
 Prevedi categorie per facilitare la selezione dei contenuti.
 
@@ -851,7 +851,7 @@ Esempi:
 - Fantasia.
 - Situazioni impossibili.
 
-### Sottotask 7.3 – Database e seed
+### Sottotask 7.3 – Database e seed [x]
 
 Analizza la struttura del database attuale e modifica soltanto ciò che è necessario.
 
@@ -864,9 +864,18 @@ Se vengono introdotte nuove tabelle:
 
 Evita di duplicare le domande già presenti.
 
-### Sottotask 7.4 – Estendibilità
+### Sottotask 7.4 – Estendibilità [x]
 
 Organizza i contenuti in modo da poter aggiungere successivamente nuove domande, scenari, personaggi ed eventi senza dover modificare continuamente il motore di gioco.
+
+### Esito Task 6 e Task 7
+
+- I punti sono configurati per modalità nel registry e applicati dal motore server-authoritative. La persistenza dei risultati usa una transazione condivisa per voti conclusivi, score giocatori, round e snapshot; il broadcast score avviene a ogni round concluso. Il ranking assegna lo stesso piazzamento a chi ha pari punteggio.
+- Il riepilogo finale mantiene le statistiche Classic e mostra in Situazioni Assurde i voti alle risposte vincitrici; segnala tutti i campioni a pari score. La nuova partita riusa stanza e roster e permette all'host di cambiare modalità/impostazioni dalla lobby.
+- Il catalogo distingue `questions` Classiche e `game_prompts` indicizzati per modalità/categoria. Sono presenti seed per Situazioni Assurde e Chi tra noi, una tabella Bluff con risposta, spiegazione e fonte HTTPS (NASA), e tabelle collegate per scenari/personaggi segreti.
+- Le categorie includono amicizia, personalità, preferenze, abitudini, ricordi, ipotetiche, relazioni, divertimento, assurde, quotidianità, viaggi, cultura generale, imbarazzanti, fantasia e situazioni impossibili. Il registry restringe i filtri alla modalità; il server normalizza anche impostazioni legacy, evitando cataloghi vuoti al cambio modalità.
+- Migrazione `0005_clear_callisto.sql` applicata. Il seed è stato eseguito due volte; i vincoli unici e gli upsert mantengono il catalogo idempotente. Bluff e Personaggio segreto hanno contenuti strutturati ma restano modalità non selezionabili finché non sarà implementato il loro gameplay.
+- Verifica finale: `npm test` passa con 13 test room/HTTP e 35 realtime; typecheck app/server, ESLint, build production Next e `git diff --check` passano.
 
 ---
 

@@ -35,7 +35,10 @@ import {
 } from "./game/game-engine.js"
 import { buildGameSummary } from "./game/game-summary.js"
 import type { GameSummary } from "./game/game-summary.js"
-import { getGameModeDefinition } from "./game/game-modes.js"
+import {
+    getGameModeDefinition,
+    normalizeGameSettingsForMode,
+} from "./game/game-modes.js"
 import {
     GameSettingsSchema,
     GameStateSnapshotSchema,
@@ -558,10 +561,13 @@ function registerRoomEvents(
                         "This game mode is not available yet."
                     )
                 }
+                const normalizedSettings = normalizeGameSettingsForMode(
+                    parsed.settings
+                )
 
                 await transaction
                     .update(rooms)
-                    .set({ settings: parsed.settings, updatedAt: new Date() })
+                    .set({ settings: normalizedSettings, updatedAt: new Date() })
                     .where(eq(rooms.id, room.id))
             })
 
@@ -697,36 +703,23 @@ function registerGameEvents(
             const database = getDatabase()
             const isAbsurdVote = nextState.settings.mode === "absurd_situations"
             const voteHasResolved = nextState.currentRound.phase === "round_result"
+            const voteRows = databaseAnswerIds.map((selectedAnswerId) => ({
+                roundId: game.databaseRoundId,
+                voterId: socket.data.playerId,
+                selectedAnswerId: selectedAnswerId!,
+            }))
 
-            await database.transaction(async (transaction) => {
-                await transaction.insert(votes).values(
-                    databaseAnswerIds.map((selectedAnswerId) => ({
-                        roundId: game.databaseRoundId,
-                        voterId: socket.data.playerId,
-                        selectedAnswerId: selectedAnswerId!,
-                    }))
-                )
-                if (!isAbsurdVote || voteHasResolved) {
-                    for (const player of nextState.players) {
-                        await transaction
-                            .update(players)
-                            .set({ score: player.score })
-                            .where(eq(players.id, player.id))
-                    }
+            if (isAbsurdVote && !voteHasResolved) {
+                await database.transaction(async (transaction) => {
+                    await transaction.insert(votes).values(voteRows)
                     await transaction
-                        .update(rounds)
-                        .set({
-                            status: "round_result",
-                            deadlineAt: null,
-                            completedAt: new Date(),
-                        })
-                        .where(eq(rounds.id, game.databaseRoundId))
-                }
-                await transaction
-                    .update(gameSessions)
-                    .set({ state: nextState, updatedAt: new Date() })
-                    .where(eq(gameSessions.id, game.sessionId))
-            })
+                        .update(gameSessions)
+                        .set({ state: nextState, updatedAt: new Date() })
+                        .where(eq(gameSessions.id, game.sessionId))
+                })
+            } else {
+                await persistRoundResult(game, nextState, voteRows)
+            }
 
             game.state = nextState
             if (isAbsurdVote && !voteHasResolved) {
@@ -859,7 +852,9 @@ async function startGame(
             )
         }
 
-        const gameSettings = GameSettingsSchema.parse(room.settings)
+        const gameSettings = normalizeGameSettingsForMode(
+            GameSettingsSchema.parse(room.settings)
+        )
         const gameMode = getGameModeDefinition(gameSettings.mode)
         if (gameMode.status !== "available") {
             throw new RoomServiceError(
@@ -1181,6 +1176,40 @@ async function buildPersistedGameSummary(
     })
 }
 
+async function persistRoundResult(
+    game: ActiveGame,
+    resultState: GameState,
+    voteRows: Array<{
+        roundId: string
+        voterId: string
+        selectedAnswerId: string
+    }> = []
+): Promise<void> {
+    await getDatabase().transaction(async (transaction) => {
+        if (voteRows.length > 0) {
+            await transaction.insert(votes).values(voteRows)
+        }
+        for (const player of resultState.players) {
+            await transaction
+                .update(players)
+                .set({ score: player.score })
+                .where(eq(players.id, player.id))
+        }
+        await transaction
+            .update(rounds)
+            .set({
+                status: "round_result",
+                deadlineAt: null,
+                completedAt: new Date(),
+            })
+            .where(eq(rounds.id, game.databaseRoundId))
+        await transaction
+            .update(gameSessions)
+            .set({ state: resultState, updatedAt: new Date() })
+            .where(eq(gameSessions.id, game.sessionId))
+    })
+}
+
 function scheduleSelection(
     io: SocketServer<
         ClientToServerEvents,
@@ -1314,26 +1343,7 @@ async function persistExpiredPhase(
         return
     }
 
-    await database.transaction(async (transaction) => {
-        for (const player of expiredState.players) {
-            await transaction
-                .update(players)
-                .set({ score: player.score })
-                .where(eq(players.id, player.id))
-        }
-        await transaction
-            .update(rounds)
-            .set({
-                status: "round_result",
-                deadlineAt: null,
-                completedAt: new Date(),
-            })
-            .where(eq(rounds.id, game.databaseRoundId))
-        await transaction
-            .update(gameSessions)
-            .set({ state: expiredState, updatedAt: new Date() })
-            .where(eq(gameSessions.id, game.sessionId))
-    })
+    await persistRoundResult(game, expiredState)
 
     game.state = expiredState
     clearPhaseTimer(game.roomCode)
@@ -1484,7 +1494,9 @@ async function getRoomSnapshot(roomCode: string): Promise<RoomSnapshot> {
         status: room.status,
         maxPlayers: room.maxPlayers,
         playerCount: roomPlayers.length,
-        settings: GameSettingsSchema.parse(room.settings),
+        settings: normalizeGameSettingsForMode(
+            GameSettingsSchema.parse(room.settings)
+        ),
         players: roomPlayers,
     }
 }

@@ -4,6 +4,7 @@ import { Avatar } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { ScoreBadge } from "@/components/ui/score-badge"
 import type { PlayerGameView } from "@/realtime-server/src/game/types"
+import { rankGamePlayers } from "@/realtime-server/src/game/leaderboard"
 
 const avatarEmoji: Record<string, string> = {
     sun: "☀️",
@@ -41,11 +42,9 @@ function RoundResult({ view, isHost, isAdvancing, onNext }: RoundResultProps) {
     const finalRound = view.currentRound.phase === "finished"
 
     if (finalRound) {
-        const ranking = [...view.players].sort(
-            (first, second) =>
-                second.score - first.score ||
-                first.nickname.localeCompare(second.nickname, "it")
-        )
+        const ranking = rankGamePlayers(view.players)
+        const winnerScore = ranking[0]?.player.score
+        const winners = ranking.filter(({ player }) => player.score === winnerScore)
         return (
             <section className="space-y-5" aria-labelledby="game-finished-title">
                 <div className="text-center">
@@ -59,20 +58,25 @@ function RoundResult({ view, isHost, isAdvancing, onNext }: RoundResultProps) {
                         id="game-finished-title"
                         className="mt-1 font-heading text-3xl font-extrabold"
                     >
-                        {ranking[0]?.nickname ?? "Grazie per aver giocato"}
+                        {winners.length > 1
+                            ? "Vittoria condivisa"
+                            : ranking[0]?.player.nickname ?? "Grazie per aver giocato"}
                     </h2>
-                    <p className="text-muted-foreground">ha conquistato il tavolo</p>
+                    <p className="text-muted-foreground">
+                        {winners.map(({ player }) => player.nickname).join(" e ")} {" "}
+                        {winners.length > 1 ? "hanno" : "ha"} conquistato il tavolo
+                    </p>
                 </div>
                 <ol className="divide-y divide-border border-y border-border">
-                    {ranking.map((player, index) => (
+                    {ranking.map(({ player, rank }) => (
                         <li key={player.id} className="flex items-center gap-3 py-3">
                             <span className="w-6 font-mono text-sm font-bold text-muted-foreground">
-                                {index + 1}
+                                {rank}
                             </span>
                             <Avatar
                                 name={player.nickname}
                                 emoji={avatarEmoji[player.avatar ?? "sun"]}
-                                color={index === 0 ? "lemon" : "teal"}
+                                color={rank === 1 ? "lemon" : "teal"}
                             />
                             <span className="min-w-0 flex-1 truncate font-semibold">
                                 {player.nickname}
@@ -160,23 +164,17 @@ function RoundResult({ view, isHost, isAdvancing, onNext }: RoundResultProps) {
             </div>
 
             <ol className="divide-y divide-border border-y border-border">
-                {[...view.players]
-                    .sort(
-                        (first, second) =>
-                            second.score - first.score ||
-                            first.nickname.localeCompare(second.nickname, "it")
-                    )
-                    .map((player, index) => (
-                        <li key={player.id} className="flex items-center gap-3 py-2.5">
-                            <span className="w-6 font-mono text-xs font-bold text-muted-foreground">
-                                {index + 1}
-                            </span>
-                            <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                                {player.nickname}
-                            </span>
-                            <ScoreBadge score={player.score} />
-                        </li>
-                    ))}
+                {rankGamePlayers(view.players).map(({ player, rank }) => (
+                    <li key={player.id} className="flex items-center gap-3 py-2.5">
+                        <span className="w-6 font-mono text-xs font-bold text-muted-foreground">
+                            {rank}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                            {player.nickname}
+                        </span>
+                        <ScoreBadge score={player.score} />
+                    </li>
+                ))}
             </ol>
 
             {isHost ? (

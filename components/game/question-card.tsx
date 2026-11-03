@@ -11,6 +11,13 @@ const categoryLabels: Record<string, string> = {
     hypotheticals: "Situazioni ipotetiche",
     relationships: "Relazioni",
     fun: "Divertimento",
+    absurd: "Assurde",
+    everyday_life: "Quotidianità",
+    travel: "Viaggi",
+    general_knowledge: "Cultura generale",
+    embarrassing: "Imbarazzanti",
+    fantasy: "Fantasia",
+    impossible_situations: "Situazioni impossibili",
 }
 
 interface QuestionCardProps {

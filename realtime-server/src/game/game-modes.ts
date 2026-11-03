@@ -1,4 +1,4 @@
-import type { GameMode, RoundPhase } from "./types.js"
+import type { GameMode, GameSettings, QuestionCategory, RoundPhase } from "./types.js"
 
 export type GameModeAction =
     | "submit_original_answer"
@@ -27,6 +27,7 @@ export interface GameModeDefinition {
     scoring: GameModeScoring
     rules: readonly string[]
     completionCondition: string
+    categories: readonly QuestionCategory[]
 }
 
 export const GAME_MODE_DEFINITIONS: readonly GameModeDefinition[] = [
@@ -64,6 +65,16 @@ export const GAME_MODE_DEFINITIONS: readonly GameModeDefinition[] = [
             "Il protagonista può selezionare più risposte vincenti.",
         ],
         completionCondition: "Tutti i round configurati hanno un risultato.",
+        categories: [
+            "friendship",
+            "personality",
+            "preferences",
+            "habits",
+            "memories",
+            "hypotheticals",
+            "relationships",
+            "fun",
+        ],
     },
     {
         id: "absurd_situations",
@@ -94,6 +105,12 @@ export const GAME_MODE_DEFINITIONS: readonly GameModeDefinition[] = [
         ],
         completionCondition:
             "Il voto si chiude quando tutti i giocatori eleggibili votano o scade il timer.",
+        categories: [
+            "absurd",
+            "everyday_life",
+            "fantasy",
+            "impossible_situations",
+        ],
     },
     {
         id: "bluff",
@@ -109,6 +126,7 @@ export const GAME_MODE_DEFINITIONS: readonly GameModeDefinition[] = [
         scoring: { winningAnswerPoints: 0, selectorPoints: 0, winningVoteBonus: 0 },
         rules: [],
         completionCondition: "Da definire prima di rendere disponibile la modalità.",
+        categories: ["general_knowledge"],
     },
     {
         id: "who_among_us",
@@ -124,6 +142,15 @@ export const GAME_MODE_DEFINITIONS: readonly GameModeDefinition[] = [
         scoring: { winningAnswerPoints: 0, selectorPoints: 0, winningVoteBonus: 0 },
         rules: [],
         completionCondition: "Da definire prima di rendere disponibile la modalità.",
+        categories: [
+            "absurd",
+            "everyday_life",
+            "travel",
+            "relationships",
+            "embarrassing",
+            "fantasy",
+            "impossible_situations",
+        ],
     },
     {
         id: "secret_character",
@@ -139,6 +166,7 @@ export const GAME_MODE_DEFINITIONS: readonly GameModeDefinition[] = [
         scoring: { winningAnswerPoints: 0, selectorPoints: 0, winningVoteBonus: 0 },
         rules: [],
         completionCondition: "Da definire prima di rendere disponibile la modalità.",
+        categories: ["everyday_life", "travel", "relationships", "fantasy"],
     },
 ]
 
@@ -150,6 +178,20 @@ export function getGameModeDefinition(modeId: GameMode): GameModeDefinition {
     const definition = GAME_MODE_DEFINITIONS.find((mode) => mode.id === modeId)
     if (!definition) throw new Error(`Unknown game mode: ${modeId}`)
     return definition
+}
+
+export function normalizeGameSettingsForMode(
+    settings: GameSettings
+): GameSettings {
+    const categories = getGameModeDefinition(settings.mode).categories
+    const enabledCategories = settings.enabledCategories.filter((category) =>
+        categories.includes(category)
+    )
+    return {
+        ...settings,
+        enabledCategories:
+            enabledCategories.length > 0 ? enabledCategories : [...categories],
+    }
 }
 
 export interface ChaosEventDefinition {

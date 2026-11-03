@@ -1,8 +1,15 @@
 import { config } from "dotenv"
 import { Pool } from "pg"
 import { drizzle } from "drizzle-orm/node-postgres"
+import { sql } from "drizzle-orm"
 
-import { gamePrompts, questions } from "./schema.js"
+import {
+    bluffQuestions,
+    gamePrompts,
+    questions,
+    secretCharacterRoles,
+    secretCharacterScenarios,
+} from "./schema.js"
 
 config({ path: ".env.local" })
 
@@ -249,25 +256,192 @@ const questionSeed: (typeof questions.$inferInsert)[] = [
     },
 ]
 
-const absurdPromptSeed: (typeof gamePrompts.$inferInsert)[] = [
-    "Il tuo frigorifero si candida a sindaco. Qual è la sua prima promessa elettorale?",
-    "Un piccione apre un ristorante stellato sul tetto. Qual è il piatto della casa?",
-    "La luna manda una nota vocale alla Terra. Che cosa dice?",
-    "Il tuo cane diventa il nuovo insegnante della scuola. Qual è la materia che introduce?",
-    "Una patata viene eletta capitana di una nave pirata. Qual è il suo ordine inaugurale?",
-    "Un ascensore decide di fare stand-up comedy. Qual è la sua battuta d'apertura?",
-    "Gli alieni arrivano sulla Terra e chiedono una sola app da provare. Quale gli consigli?",
-    "Il tuo ombrello ottiene un profilo da influencer. Qual è il suo primo post?",
-    "Un gelato viene nominato ministro della cultura. Quale festa nazionale istituisce?",
-    "La sveglia di casa fonda un gruppo musicale. Come si chiama la band?",
-    "Un polpo apre una scuola guida. Qual è la sua regola più importante?",
-    "Il tappeto del salotto organizza una protesta. Qual è la sua richiesta?",
-].map((text) => ({
-    mode: "absurd_situations",
-    text,
-    category: "fun",
-    difficulty: "easy",
-}))
+const gamePromptSeed: (typeof gamePrompts.$inferInsert)[] = [
+    {
+        mode: "absurd_situations",
+        text: "Il tuo frigorifero si candida a sindaco. Qual è la sua prima promessa elettorale?",
+        category: "everyday_life",
+        difficulty: "easy",
+    },
+    {
+        mode: "absurd_situations",
+        text: "Un piccione apre un ristorante stellato sul tetto. Qual è il piatto della casa?",
+        category: "absurd",
+        difficulty: "easy",
+    },
+    {
+        mode: "absurd_situations",
+        text: "La luna manda una nota vocale alla Terra. Che cosa dice?",
+        category: "fantasy",
+        difficulty: "easy",
+    },
+    {
+        mode: "absurd_situations",
+        text: "Il tuo cane diventa il nuovo insegnante della scuola. Qual è la materia che introduce?",
+        category: "impossible_situations",
+        difficulty: "easy",
+    },
+    {
+        mode: "absurd_situations",
+        text: "Una patata viene eletta capitana di una nave pirata. Qual è il suo ordine inaugurale?",
+        category: "fantasy",
+        difficulty: "easy",
+    },
+    {
+        mode: "absurd_situations",
+        text: "Un ascensore decide di fare stand-up comedy. Qual è la sua battuta d'apertura?",
+        category: "absurd",
+        difficulty: "easy",
+    },
+    {
+        mode: "absurd_situations",
+        text: "Gli alieni arrivano sulla Terra e chiedono una sola app da provare. Quale gli consigli?",
+        category: "impossible_situations",
+        difficulty: "easy",
+    },
+    {
+        mode: "absurd_situations",
+        text: "Il tuo ombrello ottiene un profilo da influencer. Qual è il suo primo post?",
+        category: "everyday_life",
+        difficulty: "easy",
+    },
+    {
+        mode: "absurd_situations",
+        text: "Un gelato viene nominato ministro della cultura. Quale festa nazionale istituisce?",
+        category: "impossible_situations",
+        difficulty: "easy",
+    },
+    {
+        mode: "absurd_situations",
+        text: "La sveglia di casa fonda un gruppo musicale. Come si chiama la band?",
+        category: "fantasy",
+        difficulty: "easy",
+    },
+    {
+        mode: "absurd_situations",
+        text: "Un polpo apre una scuola guida. Qual è la sua regola più importante?",
+        category: "absurd",
+        difficulty: "easy",
+    },
+    {
+        mode: "absurd_situations",
+        text: "Il tappeto del salotto organizza una protesta. Qual è la sua richiesta?",
+        category: "everyday_life",
+        difficulty: "easy",
+    },
+    {
+        mode: "who_among_us",
+        text: "Chi si perderebbe per primo durante un viaggio anche con la mappa aperta?",
+        category: "travel",
+        difficulty: "easy",
+    },
+    {
+        mode: "who_among_us",
+        text: "Chi trasformerebbe una commissione veloce in un'intera avventura?",
+        category: "everyday_life",
+        difficulty: "easy",
+    },
+    {
+        mode: "who_among_us",
+        text: "Chi diventerebbe famoso per un motivo che nessuno saprebbe spiegare?",
+        category: "absurd",
+        difficulty: "easy",
+    },
+    {
+        mode: "who_among_us",
+        text: "Chi riuscirebbe a fare amicizia con tutti durante una lunga attesa?",
+        category: "relationships",
+        difficulty: "easy",
+    },
+    {
+        mode: "who_among_us",
+        text: "Chi racconterebbe una gaffe imbarazzante ridendo per primo?",
+        category: "embarrassing",
+        difficulty: "easy",
+    },
+    {
+        mode: "who_among_us",
+        text: "Chi organizzerebbe una vacanza con un itinerario pieno di deviazioni?",
+        category: "travel",
+        difficulty: "easy",
+    },
+    {
+        mode: "who_among_us",
+        text: "Chi inventerebbe la soluzione più fantasiosa a un piccolo imprevisto?",
+        category: "fantasy",
+        difficulty: "easy",
+    },
+    {
+        mode: "who_among_us",
+        text: "Chi accetterebbe per primo una sfida completamente improbabile?",
+        category: "impossible_situations",
+        difficulty: "easy",
+    },
+]
+
+const bluffQuestionSeed: (typeof bluffQuestions.$inferInsert)[] = [
+    {
+        text: "Qual è il pianeta più grande del Sistema Solare?",
+        correctAnswer: "Giove",
+        explanation:
+            "Giove è il pianeta più grande del Sistema Solare e ha una massa superiore a quella di tutti gli altri pianeti messi insieme.",
+        sourceUrl: "https://science.nasa.gov/jupiter/",
+        category: "general_knowledge",
+        difficulty: "easy",
+    },
+    {
+        text: "Quale pianeta ha il giorno più breve del Sistema Solare?",
+        correctAnswer: "Giove",
+        explanation:
+            "Giove completa una rotazione in circa 9,9 ore, il giorno più breve tra i pianeti del Sistema Solare.",
+        sourceUrl: "https://science.nasa.gov/jupiter/",
+        category: "general_knowledge",
+        difficulty: "medium",
+    },
+]
+
+const secretScenarioSeed = [
+    {
+        title: "Una vacanza con budget limitato",
+        description:
+            "Un gruppo di amici deve scegliere e organizzare una vacanza senza superare un budget comune.",
+        category: "travel" as const,
+        minPlayers: 3,
+        maxPlayers: 4,
+        isActive: true,
+    },
+]
+
+const secretRoleSeed = [
+    {
+        scenarioTitle: "Una vacanza con budget limitato",
+        title: "Il risparmiatore",
+        description: "Preferisce una meta vicina e spese ridotte.",
+        secretObjective: "Convincere il gruppo a scegliere l'opzione meno costosa.",
+        position: 1,
+    },
+    {
+        scenarioTitle: "Una vacanza con budget limitato",
+        title: "Il fan del lusso",
+        description: "Sogna un alloggio elegante e servizi impeccabili.",
+        secretObjective: "Far approvare almeno un comfort costoso senza rivelare il ruolo.",
+        position: 2,
+    },
+    {
+        scenarioTitle: "Una vacanza con budget limitato",
+        title: "L'avventuriero",
+        description: "Vuole attività nuove, intense e fuori programma.",
+        secretObjective: "Inserire nel piano un'attività insolita e movimentata.",
+        position: 3,
+    },
+    {
+        scenarioTitle: "Una vacanza con budget limitato",
+        title: "Il pianificatore prudente",
+        description: "Vuole orari chiari e poche sorprese.",
+        secretObjective: "Ottenere un itinerario dettagliato e alternative sicure.",
+        position: 4,
+    },
+]
 
 async function seedQuestions(): Promise<void> {
     const databaseUrl = process.env.DATABASE_URL
@@ -288,14 +462,80 @@ async function seedQuestions(): Promise<void> {
         console.info(
             `Question seed complete: ${inserted.length} added, ${questionSeed.length - inserted.length} already present.`
         )
-        const insertedPrompts = await database
+        const seededPrompts = await database
             .insert(gamePrompts)
-            .values(absurdPromptSeed)
-            .onConflictDoNothing()
+            .values(gamePromptSeed)
+            .onConflictDoUpdate({
+                target: [gamePrompts.mode, gamePrompts.text],
+                set: {
+                    category: sql`excluded.category`,
+                    difficulty: sql`excluded.difficulty`,
+                    isActive: true,
+                },
+            })
             .returning({ id: gamePrompts.id })
         console.info(
-            `Absurd prompt seed complete: ${insertedPrompts.length} added, ${absurdPromptSeed.length - insertedPrompts.length} already present.`
+            `Mode prompt seed complete: ${seededPrompts.length} inserted or updated.`
         )
+
+        const seededBluffQuestions = await database
+            .insert(bluffQuestions)
+            .values(bluffQuestionSeed)
+            .onConflictDoUpdate({
+                target: bluffQuestions.text,
+                set: {
+                    correctAnswer: sql`excluded.correct_answer`,
+                    explanation: sql`excluded.explanation`,
+                    sourceUrl: sql`excluded.source_url`,
+                    category: sql`excluded.category`,
+                    difficulty: sql`excluded.difficulty`,
+                    isActive: true,
+                },
+            })
+            .returning({ id: bluffQuestions.id })
+        console.info(
+            `Bluff question seed complete: ${seededBluffQuestions.length} inserted or updated.`
+        )
+
+        const seededScenarios = await database
+            .insert(secretCharacterScenarios)
+            .values(secretScenarioSeed)
+            .onConflictDoUpdate({
+                target: secretCharacterScenarios.title,
+                set: {
+                    description: sql`excluded.description`,
+                    category: sql`excluded.category`,
+                    minPlayers: sql`excluded.min_players`,
+                    maxPlayers: sql`excluded.max_players`,
+                    isActive: true,
+                },
+            })
+            .returning({ id: secretCharacterScenarios.id, title: secretCharacterScenarios.title })
+        const scenarioIdByTitle = new Map(
+            seededScenarios.map((scenario) => [scenario.title, scenario.id])
+        )
+        for (const role of secretRoleSeed) {
+            const scenarioId = scenarioIdByTitle.get(role.scenarioTitle)
+            if (!scenarioId) throw new Error(`Missing scenario seed: ${role.scenarioTitle}`)
+            await database
+                .insert(secretCharacterRoles)
+                .values({
+                    scenarioId,
+                    title: role.title,
+                    description: role.description,
+                    secretObjective: role.secretObjective,
+                    position: role.position,
+                })
+                .onConflictDoUpdate({
+                    target: [secretCharacterRoles.scenarioId, secretCharacterRoles.title],
+                    set: {
+                        description: sql`excluded.description`,
+                        secretObjective: sql`excluded.secret_objective`,
+                        position: sql`excluded.position`,
+                    },
+                })
+        }
+        console.info(`Secret-character scenario seed complete: ${secretRoleSeed.length} roles.`)
     } finally {
         await pool.end()
     }

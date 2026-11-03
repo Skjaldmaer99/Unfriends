@@ -177,6 +177,100 @@ export const gamePrompts = pgTable(
     ]
 )
 
+export const bluffQuestions = pgTable(
+    "bluff_questions",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        text: varchar("text", { length: 500 }).notNull(),
+        correctAnswer: varchar("correct_answer", { length: 300 }).notNull(),
+        explanation: varchar("explanation", { length: 1200 }).notNull(),
+        sourceUrl: varchar("source_url", { length: 1000 }).notNull(),
+        category: questionCategoryEnum("category").notNull(),
+        difficulty: questionDifficultyEnum("difficulty")
+            .notNull()
+            .default("easy"),
+        isActive: boolean("is_active").notNull().default(true),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        uniqueIndex("bluff_questions_text_unique").on(table.text),
+        index("bluff_questions_active_category_idx").on(
+            table.isActive,
+            table.category
+        ),
+        check(
+            "bluff_questions_content_not_blank_check",
+            sql`length(trim(${table.text})) > 0 and length(trim(${table.correctAnswer})) > 0 and length(trim(${table.explanation})) > 0`
+        ),
+        check(
+            "bluff_questions_https_source_check",
+            sql`${table.sourceUrl} ~ '^https://'`
+        ),
+    ]
+)
+
+export const secretCharacterScenarios = pgTable(
+    "secret_character_scenarios",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        title: varchar("title", { length: 200 }).notNull(),
+        description: varchar("description", { length: 1200 }).notNull(),
+        category: questionCategoryEnum("category").notNull(),
+        minPlayers: smallint("min_players").notNull().default(3),
+        maxPlayers: smallint("max_players").notNull().default(8),
+        isActive: boolean("is_active").notNull().default(true),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        uniqueIndex("secret_character_scenarios_title_unique").on(table.title),
+        index("secret_character_scenarios_active_idx").on(table.isActive),
+        check(
+            "secret_character_scenarios_player_count_check",
+            sql`${table.minPlayers} >= 3 and ${table.maxPlayers} >= ${table.minPlayers} and ${table.maxPlayers} <= 8`
+        ),
+        check(
+            "secret_character_scenarios_content_not_blank_check",
+            sql`length(trim(${table.title})) > 0 and length(trim(${table.description})) > 0`
+        ),
+    ]
+)
+
+export const secretCharacterRoles = pgTable(
+    "secret_character_roles",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        scenarioId: uuid("scenario_id")
+            .notNull()
+            .references(() => secretCharacterScenarios.id, { onDelete: "cascade" }),
+        title: varchar("title", { length: 120 }).notNull(),
+        description: varchar("description", { length: 600 }).notNull(),
+        secretObjective: varchar("secret_objective", { length: 600 }).notNull(),
+        position: smallint("position").notNull(),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        uniqueIndex("secret_character_roles_scenario_title_unique").on(
+            table.scenarioId,
+            table.title
+        ),
+        uniqueIndex("secret_character_roles_scenario_position_unique").on(
+            table.scenarioId,
+            table.position
+        ),
+        check("secret_character_roles_position_positive_check", sql`${table.position} > 0`),
+        check(
+            "secret_character_roles_content_not_blank_check",
+            sql`length(trim(${table.title})) > 0 and length(trim(${table.description})) > 0 and length(trim(${table.secretObjective})) > 0`
+        ),
+    ]
+)
+
 export const gameSessions = pgTable(
     "game_sessions",
     {

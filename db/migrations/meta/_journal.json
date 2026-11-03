@@ -36,6 +36,13 @@
       "when": 1793707341990,
       "tag": "0004_naive_doctor_spectrum",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793709086389,
+      "tag": "0005_clear_callisto",
+      "breakpoints": true
     }
   ]
 }
