@@ -209,7 +209,17 @@ export function useRoomLobby(code: string) {
         })
         activeSocket.on("disconnect", () => {
           if (active)
-            setState((current) => ({ ...current, isConnected: false }))
+            setState((current) => ({
+              ...current,
+              isConnected: false,
+              isSavingSettings: false,
+              isStarting: false,
+              isSubmittingAnswer: false,
+              isSelectingAnswer: false,
+              isAdvancingRound: false,
+              isReplaying: false,
+              actionError: "Connessione interrotta. Riprovo a collegarmi…",
+            }))
         })
         activeSocket.on("connect_error", (connectionError) => {
           if (active) {
@@ -656,6 +666,14 @@ export function useRoomLobby(code: string) {
     }
   }
 
+  function retryConnection(): void {
+    setState((current) => ({
+      ...current,
+      actionError: "Riconnessione al tavolo in corso…",
+    }))
+    socketRef.current?.connect()
+  }
+
   const selfReady = state.room
     ? (state.readyByPlayerId[state.room.selfPlayerId] ?? false)
     : false
@@ -671,5 +689,6 @@ export function useRoomLobby(code: string) {
     advanceRound,
     replayGame,
     leaveRoom,
+    retryConnection,
   }
 }

@@ -43,7 +43,7 @@ function GameScreen({ code }: { code: string }) {
     return <LoadingState label="Rientro nella partita…" fullHeight />
   }
 
-  if (game.error || !game.room || !view || !playerId) {
+  if (game.error || !game.room || !playerId) {
     return (
       <main className="mx-auto flex min-h-svh max-w-xl flex-col justify-center px-5 py-10">
         <p className="text-xs font-bold text-brand-coral uppercase">
@@ -56,13 +56,46 @@ function GameScreen({ code }: { code: string }) {
           {game.error ||
             "Controlla la connessione e prova a rientrare nella stanza."}
         </p>
-        <Button
-          className="mt-6 w-fit"
-          onPress={() => router.push(`/room/${encodeURIComponent(code)}`)}
-        >
-          <ArrowLeft aria-hidden="true" />
-          Torna alla stanza
-        </Button>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Button onPress={() => router.push("/")}>Torna alla home</Button>
+          <Button
+            variant="outline"
+            onPress={() => router.push(`/room/${encodeURIComponent(code)}`)}
+          >
+            <ArrowLeft aria-hidden="true" />
+            Torna alla stanza
+          </Button>
+        </div>
+      </main>
+    )
+  }
+
+  if (!view) {
+    return (
+      <main className="mx-auto flex min-h-svh max-w-xl flex-col justify-center px-5 py-10">
+        <p className="text-xs font-bold text-brand-coral uppercase">
+          {game.isConnected ? "Ripristino partita" : "Connessione interrotta"}
+        </p>
+        <h1 className="mt-2 font-heading text-3xl font-bold">
+          La partita non è ancora disponibile
+        </h1>
+        <p className="mt-3 leading-relaxed text-muted-foreground" role="status">
+          {game.actionError ||
+            "Stiamo recuperando lo stato della stanza. Puoi riprovare o tornare alla lobby."}
+        </p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Button onPress={game.retryConnection}>Riprova connessione</Button>
+          <Button
+            variant="outline"
+            onPress={() => router.push(`/room/${encodeURIComponent(code)}`)}
+          >
+            <ArrowLeft aria-hidden="true" />
+            Torna alla stanza
+          </Button>
+          <Button variant="ghost" onPress={() => router.push("/")}>
+            Torna alla home
+          </Button>
+        </div>
       </main>
     )
   }

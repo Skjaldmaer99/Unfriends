@@ -17,7 +17,7 @@ import {
   gameSessions,
 } from "../../db/schema.js"
 import { closeDatabase, getDatabase } from "../../lib/database.js"
-import { createRoom, joinRoom } from "../../lib/room-service.js"
+import { createRoom, joinRoom, leaveRoom } from "../../lib/room-service.js"
 import { hashPlayerSessionToken } from "../../lib/player-session.js"
 import { createSocketTicket } from "./auth/socket-ticket.js"
 import { createRealtimeServer } from "./server.js"
@@ -46,6 +46,7 @@ type EventPayload<Key extends keyof ServerToClientEvents> = Parameters<
 interface TestPlayer {
   id: string
   nickname: string
+  sessionTokenHash: string
 }
 
 const sockets = new Set<TestSocket>()
@@ -103,6 +104,12 @@ function emitRoundNext(
   return new Promise((resolve) => socket.emit("round:next", {}, resolve))
 }
 
+function emitGameReplay(
+  socket: TestSocket
+): Promise<EventSuccess<{ replayed: true }> | EventFailure> {
+  return new Promise((resolve) => socket.emit("game:replay", {}, resolve))
+}
+
 async function connectPlayer(
   player: TestPlayer,
   beforeConnect?: (socket: TestSocket) => void
@@ -143,9 +150,12 @@ function getServerPort(): number {
 
 async function createTestRoom(): Promise<TestPlayer[]> {
   const database = getDatabase()
+  const hostSessionTokenHash = hashPlayerSessionToken(
+    randomBytes(32).toString("base64url")
+  )
   const room = await createRoom(
     { nickname: "IntegrationHost", avatar: "sun" },
-    hashPlayerSessionToken(randomBytes(32).toString("base64url"))
+    hostSessionTokenHash
   )
   roomCode = room.code
   const roomRows = await database
@@ -163,21 +173,32 @@ async function createTestRoom(): Promise<TestPlayer[]> {
     .limit(1)
   assert.ok(host)
 
+  const guestASessionTokenHash = hashPlayerSessionToken(
+    randomBytes(32).toString("base64url")
+  )
   const guestA = await joinRoom(
     { code: room.code, nickname: "IntegrationGuestA", avatar: "star" },
-    hashPlayerSessionToken(randomBytes(32).toString("base64url"))
+    guestASessionTokenHash
+  )
+  const guestBSessionTokenHash = hashPlayerSessionToken(
+    randomBytes(32).toString("base64url")
   )
   const guestB = await joinRoom(
     { code: room.code, nickname: "IntegrationGuestB", avatar: "wave" },
-    hashPlayerSessionToken(randomBytes(32).toString("base64url"))
+    guestBSessionTokenHash
   )
 
   return [
-    host,
-    { id: guestA.playerId, nickname: "IntegrationGuestA" },
+    { ...host, sessionTokenHash: hostSessionTokenHash },
+    {
+      id: guestA.playerId,
+      nickname: "IntegrationGuestA",
+      sessionTokenHash: guestASessionTokenHash,
+    },
     {
       id: guestB.playerId,
       nickname: "IntegrationGuestB",
+      sessionTokenHash: guestBSessionTokenHash,
     },
   ]
 }
@@ -434,6 +455,101 @@ describe(
           assert.equal(persistedRoom.status, "finished")
         }
       }
+
+      const exitingPlayer = testPlayers[2]
+      const exitResult = await leaveRoom(
+        roomCode!,
+        exitingPlayer.sessionTokenHash
+      )
+      assert.deepEqual(exitResult, { roomClosed: false })
+      playerSockets.get(exitingPlayer.id)?.disconnect()
+      playerSockets.delete(exitingPlayer.id)
+
+      const currentSockets = [...playerSockets.values()]
+      const replayUpdates = currentSockets.map((socket) =>
+        waitForEvent(socket, "game:replayed")
+      )
+      const replayResult = await emitGameReplay(hostSocket)
+      assert.deepEqual(replayResult, { ok: true, data: { replayed: true } })
+      const lobbySnapshots = await Promise.all(replayUpdates)
+      assert.ok(
+        lobbySnapshots.every((snapshot) => snapshot.status === "waiting")
+      )
+      assert.ok(
+        lobbySnapshots.every((snapshot) =>
+          snapshot.players.every((player) => player.score === 0)
+        )
+      )
+
+      const reconnectingPlayer = testPlayers[1]
+      playerSockets.get(reconnectingPlayer.id)?.disconnect()
+      hostSocket.disconnect()
+      const hostJoinedEvents: Promise<EventPayload<"room:joined">>[] = []
+      const guestJoinedEvents: Promise<EventPayload<"room:joined">>[] = []
+      const [
+        reconnectedHostSocket,
+        reconnectedGuestSocket,
+        reconnectedExitingPlayerSocket,
+      ] = await Promise.all([
+        connectPlayer(host, (socket) => {
+          hostJoinedEvents.push(waitForEvent(socket, "room:joined"))
+        }),
+        connectPlayer(reconnectingPlayer, (socket) => {
+          guestJoinedEvents.push(waitForEvent(socket, "room:joined"))
+        }),
+        connectPlayer(exitingPlayer),
+      ])
+      playerSockets.set(host.id, reconnectedHostSocket)
+      playerSockets.set(reconnectingPlayer.id, reconnectedGuestSocket)
+      playerSockets.set(exitingPlayer.id, reconnectedExitingPlayerSocket)
+      const hostJoinedEvent = hostJoinedEvents[0]
+      const guestJoinedEvent = guestJoinedEvents[0]
+      assert.ok(hostJoinedEvent)
+      assert.ok(guestJoinedEvent)
+      const [reconnectedLobby, guestLobby] = await Promise.all([
+        hostJoinedEvent,
+        guestJoinedEvent,
+      ])
+      assert.equal(reconnectedLobby.status, "waiting")
+      assert.equal(guestLobby.status, "waiting")
+      assert.equal(
+        reconnectedLobby.players.find((player) => player.id === host.id)
+          ?.isHost,
+        true
+      )
+      assert.equal(
+        new Set(reconnectedLobby.players.map((player) => player.id)).size,
+        testPlayers.length
+      )
+
+      const nextGameViews = [...playerSockets.values()].map((socket) =>
+        waitForEvent(socket, "game:started")
+      )
+      const nextStart = await emitRoomStart(reconnectedHostSocket)
+      assert.deepEqual(nextStart, { ok: true, data: { started: true } })
+      const restartedViews = (await Promise.all(
+        nextGameViews
+      )) as PlayerGameView[]
+      assert.ok(
+        restartedViews.every(
+          (view) =>
+            view.currentRound.number === 1 &&
+            view.currentRound.phase === "protagonist_answer"
+        )
+      )
+
+      await new Promise<void>((resolve) => io.close(() => resolve()))
+      const offlineLeaveResult = await leaveRoom(
+        roomCode!,
+        testPlayers[2].sessionTokenHash
+      )
+      assert.deepEqual(offlineLeaveResult, { roomClosed: false })
+      const [leftPlayer] = await getDatabase()
+        .select({ connectionStatus: players.connectionStatus })
+        .from(players)
+        .where(eq(players.id, testPlayers[2].id))
+        .limit(1)
+      assert.equal(leftPlayer.connectionStatus, "disconnected")
     })
   }
 )

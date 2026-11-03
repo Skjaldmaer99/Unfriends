@@ -323,8 +323,7 @@ async function handleConnection(
     .where(eq(players.id, playerId))
 
   const snapshot = await getRoomSnapshot(roomCode)
-  const activeGame =
-    activeGames.get(roomCode) ?? (await restoreGameForRoom(io, roomCode))
+  let activeGame = activeGames.get(roomCode) ?? null
 
   registerRoomEvents(io, socket)
   registerGameEvents(io, socket)
@@ -355,6 +354,21 @@ async function handleConnection(
       ready: readyPlayers.get(roomCode)?.get(player.id) ?? false,
     }))
   )
+
+  if (!activeGame && snapshot.status !== "waiting") {
+    try {
+      activeGame = await restoreGameForRoom(io, roomCode)
+    } catch (error) {
+      console.error("Could not restore the persisted room game state.", error)
+      socket.emit("room:error", {
+        ok: false,
+        code: "GAME_STATE_UNAVAILABLE",
+        error:
+          "La partita non è recuperabile al momento. Puoi riprovare o uscire dalla stanza.",
+      })
+      return
+    }
+  }
 
   if (activeGame) {
     emitViewToSocket(socket, "game:state", activeGame.state)
