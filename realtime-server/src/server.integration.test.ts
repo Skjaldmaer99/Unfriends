@@ -604,6 +604,14 @@ describe(
             )
             const startResult = await emitRoomStart(hostSocket)
             assert.equal(startResult.ok, true)
+            const settingsAfterStart = await emitRoomSettings(hostSocket, {
+                ...currentSettings[0].settings,
+                mode: "absurd_situations",
+            })
+            assert.equal(settingsAfterStart.ok, false)
+            if (!settingsAfterStart.ok) {
+                assert.equal(settingsAfterStart.code, "ROOM_UNAVAILABLE")
+            }
             let started = (await Promise.all(initialViews)) as PlayerGameView[]
             assert.equal(started[0].totalRounds, testPlayers.length)
 

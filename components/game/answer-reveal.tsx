@@ -73,7 +73,11 @@ function AnswerReveal({
                                 ? "Ecco le risposte"
                                 : "Ecco le ipotesi"}
                     </h2>
-                    <p className="mt-1 text-sm text-muted-foreground">
+                    <p
+                        className="mt-1 text-sm text-muted-foreground"
+                        role={isAbsurdMode ? "status" : undefined}
+                        aria-live={isAbsurdMode ? "polite" : undefined}
+                    >
                         {isAbsurdMode
                             ? hasSubmittedVote
                                 ? `Voto registrato. ${currentRound.voteCount} di ${currentRound.requiredVoteCount} voti raccolti.`

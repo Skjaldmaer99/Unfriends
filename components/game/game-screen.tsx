@@ -137,6 +137,8 @@ function GameScreen({ code }: { code: string }) {
                         Stanza
                     </Button>
                     <span
+                        role="status"
+                        aria-live="polite"
                         className={`inline-flex items-center gap-1.5 text-xs font-semibold ${game.isConnected ? "text-brand-teal" : "text-muted-foreground"}`}
                     >
                         {game.isConnected ? (

@@ -881,7 +881,7 @@ Organizza i contenuti in modo da poter aggiungere successivamente nuove domande,
 
 # TASK 8 – ESPERIENZA UTENTE E INTERFACCIA
 
-## Sottotask 8.1 – Coerenza grafica
+## Sottotask 8.1 – Coerenza grafica [x]
 
 Mantieni l'identità visiva attuale di "Unfriends".
 
@@ -889,7 +889,7 @@ Le nuove modalità devono sembrare parte della stessa applicazione.
 
 Non creare interfacce completamente differenti per ogni modalità.
 
-### Sottotask 8.2 – Componenti condivisi
+### Sottotask 8.2 – Componenti condivisi [x]
 
 Individua gli elementi che possono essere riutilizzati:
 
@@ -904,7 +904,7 @@ Individua gli elementi che possono essere riutilizzati:
 - Messaggi di attesa.
 - Indicatori di connessione.
 
-### Sottotask 8.3 – Responsive
+### Sottotask 8.3 – Responsive [ ]
 
 Verifica che tutte le nuove schermate funzionino correttamente:
 
@@ -914,7 +914,7 @@ Verifica che tutte le nuove schermate funzionino correttamente:
 
 Il gioco deve essere comodo soprattutto da smartphone, perché i partecipanti utilizzeranno probabilmente il proprio telefono durante una sessione condivisa.
 
-### Sottotask 8.4 – Feedback
+### Sottotask 8.4 – Feedback [x]
 
 Prevedi feedback visivi per:
 
@@ -933,7 +933,7 @@ Prevedi feedback visivi per:
 
 Verifica che tutte le nuove funzionalità rispettino le regole di sicurezza già presenti.
 
-### Sottotask 9.1 – Validazione delle azioni
+### Sottotask 9.1 – Validazione delle azioni [x]
 
 Ogni azione deve essere validata dal backend.
 
@@ -946,7 +946,7 @@ Verifica:
 - Validità dei dati inviati.
 - Eventuali azioni già effettuate.
 
-### Sottotask 9.2 – Informazioni private
+### Sottotask 9.2 – Informazioni private [x]
 
 Non esporre ai giocatori informazioni che devono rimanere segrete.
 
@@ -958,7 +958,7 @@ In particolare:
 - Ruoli segreti.
 - Selezioni non ancora confermate.
 
-### Sottotask 9.3 – Eventi Socket.IO
+### Sottotask 9.3 – Eventi Socket.IO [x]
 
 Gli eventi realtime devono essere coerenti e non devono permettere:
 
@@ -967,6 +967,14 @@ Gli eventi realtime devono essere coerenti e non devono permettere:
 - Modifiche a round conclusi.
 - Assegnazioni di punti non autorizzate.
 - Modifiche alle impostazioni da parte di giocatori non host.
+
+### Esito Task 8 e Task 9 (modalità attive)
+
+- Il flusso partita riusa card, timer, avatar, score badge, attese e risultati esistenti. Il roster mostra un indicatore con stato accessibile per i giocatori disconnessi; connessione e progresso voti sono annunciati con `role=status`/`aria-live`. Errori azione e risposta/attesa hanno feedback visibile.
+- Risposte e voti delle modalità attive restano privati fino alla fase prevista; i test verificano risposte anonime, `originalAnswer` non esposta ai guest, assenza del campo `votes` nelle viste, auto-voto e voto duplicato respinti. Gli eventi rifiutano identità client-controlled, i permessi host/round sono verificati e le impostazioni non possono cambiare dopo lo start.
+- Il browser smoke test desktop e 390px mobile non ha rilevato overflow orizzontale. La verifica tablet dedicata resta aperta; la stanza usata per l'ispezione è stata rimossa dal teardown dei test e il server realtime locale non era raggiungibile.
+- Bluff e Personaggio segreto rimangono non selezionabili e i loro dati non sono esposti da eventi/API finché le relative regole di gioco non saranno implementate.
+- Verifica: suite completa con 13 test room/HTTP e 35 realtime, typecheck app/server, lint e build production passano. Il test realtime include un tentativo host di modificare settings dopo l'avvio, respinto con `ROOM_UNAVAILABLE`.
 
 ---
 
