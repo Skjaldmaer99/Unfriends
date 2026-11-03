@@ -24,12 +24,17 @@ interface RoundResultProps {
 }
 
 function RoundResult({ view, isHost, isAdvancing, onNext }: RoundResultProps) {
-  const selected = view.currentRound.answers.find(
-    (answer) => answer.id === view.currentRound.selectedAnswerId
+  const selectedAnswers = view.currentRound.answers.filter((answer) =>
+    view.currentRound.selectedAnswerIds.includes(answer.id)
   )
-  const selectedPlayer = view.players.find(
-    (player) => player.id === selected?.authorId
-  )
+  const selectedPlayers = selectedAnswers
+    .map((answer) =>
+      view.players.find((player) => player.id === answer.authorId)
+    )
+    .filter((player) => player !== undefined)
+  const winnerNames = [
+    ...new Set(selectedPlayers.map((player) => player.nickname)),
+  ]
   const protagonist = view.players.find(
     (player) => player.id === view.currentRound.protagonistId
   )
@@ -93,37 +98,55 @@ function RoundResult({ view, isHost, isAdvancing, onNext }: RoundResultProps) {
           id="round-result-title"
           className="mt-1 font-heading text-2xl font-extrabold"
         >
-          {selectedPlayer
-            ? `${selectedPlayer.nickname} ci ha preso!`
-            : "Round completato"}
+          {winnerNames.length === 1
+            ? `${winnerNames[0]} ci ha preso!`
+            : winnerNames.length > 1
+              ? `Scelta condivisa: ${winnerNames.join(", ")}`
+              : "Round completato"}
         </h2>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="space-y-3">
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-xs font-bold text-muted-foreground uppercase">
-            Risposta originale
+            Risposta originale · {protagonist?.nickname}
           </p>
           <p className="mt-2 text-lg font-semibold">
             {view.currentRound.originalAnswer ?? "Nessuna risposta inviata"}
           </p>
-          <p className="mt-2 text-xs text-muted-foreground">
-            {protagonist?.nickname}
-          </p>
         </div>
-        <div className="rounded-lg border border-brand-teal/35 bg-brand-teal/5 p-4">
-          <p className="text-xs font-bold text-muted-foreground uppercase">
-            Risposta scelta
-          </p>
-          <p className="mt-2 text-lg font-semibold">
-            {selected?.content ?? "Nessuna risposta selezionata"}
-          </p>
-          {selectedPlayer && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Scritta da {selectedPlayer.nickname}
+        {selectedAnswers.length > 0 ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {selectedAnswers.map((answer) => {
+              const author = view.players.find(
+                (player) => player.id === answer.authorId
+              )
+              return (
+                <div
+                  key={answer.id}
+                  className="rounded-lg border border-brand-teal/35 bg-brand-teal/5 p-4"
+                >
+                  <p className="text-xs font-bold text-muted-foreground uppercase">
+                    Risposta vincente
+                  </p>
+                  <p className="mt-2 text-lg font-semibold">{answer.content}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Scritta da {author?.nickname ?? "Giocatore"}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-border bg-card p-4">
+            <p className="text-xs font-bold text-muted-foreground uppercase">
+              Risposta vincente
             </p>
-          )}
-        </div>
+            <p className="mt-2 text-lg font-semibold">
+              Nessuna risposta selezionata
+            </p>
+          </div>
+        )}
       </div>
 
       <ol className="divide-y divide-border border-y border-border">

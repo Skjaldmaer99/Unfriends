@@ -33,6 +33,25 @@ describe("realtime event schemas", () => {
     )
   })
 
+  it("accepts one or more distinct answer ids and rejects empty or duplicate selections", () => {
+    assert.deepEqual(
+      clientEventSchemas["answer:select"].parse({
+        answerIds: ["answer-1", "answer-2"],
+      }),
+      { answerIds: ["answer-1", "answer-2"] }
+    )
+    assert.equal(
+      clientEventSchemas["answer:select"].safeParse({ answerIds: [] }).success,
+      false
+    )
+    assert.equal(
+      clientEventSchemas["answer:select"].safeParse({
+        answerIds: ["answer-1", "answer-1"],
+      }).success,
+      false
+    )
+  })
+
   it("accepts only scoped socket ticket claims", () => {
     assert.equal(
       SocketTicketEventSchema.safeParse({

@@ -15,6 +15,13 @@
       "when": 1793552397314,
       "tag": "0001_tan_lilandra",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793704852825,
+      "tag": "0002_lyrical_klaw",
+      "breakpoints": true
     }
   ]
 }

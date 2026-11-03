@@ -273,7 +273,7 @@ Il free tier Render sospende un web service dopo 15 minuti senza traffico e la r
 
 ---
 
-# TASK 2 – POSSIBILITÀ DI SELEZIONARE PIÙ RISPOSTE VINCENTI
+# TASK 2 – POSSIBILITÀ DI SELEZIONARE PIÙ RISPOSTE VINCENTI [x]
 
 ## Obiettivo
 
@@ -281,7 +281,7 @@ Attualmente il protagonista può selezionare una sola risposta come vincente.
 
 Vorrei introdurre la possibilità di selezionare più risposte quando due o più giocatori hanno dato risposte ugualmente valide, simili o altrettanto affini.
 
-### Sottotask 2.1 – Modifica della selezione
+### Sottotask 2.1 – Modifica della selezione [x]
 
 Nella fase in cui il protagonista deve scegliere la risposta più affine:
 
@@ -293,7 +293,7 @@ Nella fase in cui il protagonista deve scegliere la risposta più affine:
 
 Non permettere di confermare senza aver selezionato almeno una risposta.
 
-### Sottotask 2.2 – Modifica del modello dati
+### Sottotask 2.2 – Modifica del modello dati [x]
 
 Verifica se attualmente il backend e il database prevedono un solo vincitore.
 
@@ -303,7 +303,7 @@ La selezione deve essere rappresentata in modo coerente sia nel backend sia nel 
 
 Non limitarti a modificare l'interfaccia: la possibilità di selezionare più vincitori deve essere gestita anche dalle regole del server.
 
-### Sottotask 2.3 – Sistema di punteggio
+### Sottotask 2.3 – Sistema di punteggio [x]
 
 Adatta il sistema di punteggio esistente.
 
@@ -317,7 +317,7 @@ Mantieni invariato il sistema di punteggio attuale, salvo le modifiche strettame
 
 Evita che un giocatore possa ricevere punti duplicati per aver selezionato più volte la stessa risposta.
 
-### Sottotask 2.4 – Risultato del round
+### Sottotask 2.4 – Risultato del round [x]
 
 Quando sono state selezionate più risposte:
 
@@ -328,7 +328,7 @@ Quando sono state selezionate più risposte:
 
 ---
 
-# TASK 3 – MIGLIORAMENTO DELLA SELEZIONE DELLE RISPOSTE
+# TASK 3 – MIGLIORAMENTO DELLA SELEZIONE DELLE RISPOSTE [x]
 
 ## Problema riscontrato
 
@@ -338,7 +338,7 @@ Questo non deve accadere.
 
 Soltanto il giocatore autorizzato a effettuare la selezione deve poter interagire con le risposte.
 
-### Sottotask 3.1 – Distinzione tra giocatore selezionatore e osservatori
+### Sottotask 3.1 – Distinzione tra giocatore selezionatore e osservatori [x]
 
 Quando un giocatore deve scegliere la risposta più affine:
 
@@ -352,7 +352,7 @@ La distinzione deve essere gestita in base al ruolo del giocatore nella fase cor
 
 Non basarti esclusivamente su controlli CSS o sulla disabilitazione visiva dei pulsanti.
 
-### Sottotask 3.2 – Esperienza visiva
+### Sottotask 3.2 – Esperienza visiva [x]
 
 Per il giocatore che deve scegliere:
 
@@ -368,7 +368,7 @@ Per gli altri giocatori:
 - Non devono mostrare un cursore che suggerisca la possibilità di cliccare.
 - Non devono presentare pulsanti o controlli di selezione.
 
-### Sottotask 3.3 – Dopo la selezione
+### Sottotask 3.3 – Dopo la selezione [x]
 
 Quando il giocatore autorizzato conferma la selezione:
 
@@ -382,7 +382,7 @@ Deve apparire:
 
 Mantieni il comportamento visivo già presente per la rivelazione del vincitore, adattandolo alla possibilità di avere più risposte selezionate.
 
-### Sottotask 3.4 – Validazione backend
+### Sottotask 3.4 – Validazione backend [x]
 
 Il backend deve verificare che:
 
@@ -391,6 +391,14 @@ Il backend deve verificare che:
 - Le risposte selezionate appartengano effettivamente al round corrente.
 - Non vengano selezionate risposte inesistenti o duplicate.
 - Non sia possibile modificare il risultato dopo la conferma.
+
+### Esito Task 2 e Task 3
+
+- `GameRound` e `PlayerGameView` espongono `selectedAnswerIds`; `answer:select` accetta una lista non vuota, limitata e senza duplicati. Il server valida fase, ruolo, round e appartenenza degli ID, poi persiste una riga `votes` per risposta selezionata nella stessa transazione di punteggi e snapshot.
+- La migrazione `0002_lyrical_klaw.sql` sostituisce l'unicità voter/round con voter/round/risposta, consentendo più selezioni senza duplicare lo stesso voto. Gli snapshot salvati con il precedente campo singolare vengono normalizzati in lettura per mantenere la compatibilità.
+- Il punteggio assegna 3 punti a ciascun autore distinto selezionato e 1 punto al protagonista, anche quando seleziona più risposte. La schermata mostra tutti gli autori e le risposte vincenti.
+- `AnswerReveal` rende cliccabili solo i controlli del protagonista, determinato dal player ID autenticato locale e dalla fase corrente. Gli altri giocatori ricevono contenuto statico non interattivo. La selezione è locale finché non viene confermata; il pulsante resta disabilitato senza selezioni.
+- Verifica: test unitari dominio per multi-winner, input vuoto/duplicato e scoring; test Zod per la lista; test snapshot legacy; integrazione PostgreSQL con selezione di due vincitori, guest non autorizzato respinto, due voti distinti persistiti, punteggi corretti, risultato e reconnect. Suite completa: 13 test room/HTTP e 24 realtime passati; typecheck app/server, lint senza warning e build Next passano.
 
 ---
 

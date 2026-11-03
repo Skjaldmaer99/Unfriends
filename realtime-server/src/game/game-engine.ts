@@ -27,6 +27,8 @@ export type GameRuleErrorCode =
   | "ANSWER_EXPIRED"
   | "PHASE_NOT_EXPIRED"
   | "ANSWER_NOT_FOUND"
+  | "NO_ANSWERS_SELECTED"
+  | "DUPLICATE_SELECTED_ANSWER"
 
 export class GameRuleError extends Error {
   constructor(
@@ -115,7 +117,7 @@ export function createGame(input: CreateGameInput): GameState {
       deadlineAt: now + settings.answerTimeLimitSeconds * 1000,
       originalAnswer: null,
       answers: [],
-      selectedAnswerId: null,
+      selectedAnswerIds: [],
     },
   }
 }
@@ -282,7 +284,7 @@ export function expireCurrentPhase(
 export function selectWinningAnswer(
   state: GameState,
   playerId: string,
-  answerId: string,
+  answerIds: readonly string[],
   now = Date.now()
 ): GameState {
   ensureActive(state)
@@ -304,29 +306,47 @@ export function selectWinningAnswer(
 
   assertBeforeDeadline(state, now)
 
-  const selectedAnswer = state.currentRound.answers.find(
-    (answer) => answer.id === answerId
-  )
-  if (!selectedAnswer) {
+  if (answerIds.length === 0) {
     throw new GameRuleError(
-      "ANSWER_NOT_FOUND",
-      "The selected answer does not exist."
+      "NO_ANSWERS_SELECTED",
+      "Select at least one answer."
     )
   }
 
-  if (selectedAnswer.playerId === playerId) {
+  const selectedAnswerIds = [...new Set(answerIds)]
+  if (selectedAnswerIds.length !== answerIds.length) {
+    throw new GameRuleError(
+      "DUPLICATE_SELECTED_ANSWER",
+      "Selected answers cannot contain duplicates."
+    )
+  }
+
+  const selectedAnswers = selectedAnswerIds.map((selectedAnswerId) =>
+    state.currentRound.answers.find((answer) => answer.id === selectedAnswerId)
+  )
+  if (selectedAnswers.some((answer) => !answer)) {
+    throw new GameRuleError(
+      "ANSWER_NOT_FOUND",
+      "One or more selected answers do not exist."
+    )
+  }
+
+  if (selectedAnswers.some((answer) => answer?.playerId === playerId)) {
     throw new GameRuleError(
       "PROTAGONIST_CANNOT_GUESS",
       "A player cannot select their own answer."
     )
   }
 
+  const selectedPlayerIds = new Set(
+    selectedAnswers.map((answer) => answer!.playerId)
+  )
   const players = state.players.map((player) => ({
     ...player,
     score:
       player.score +
       (player.id === state.currentRound.protagonistId ? 1 : 0) +
-      (player.id === selectedAnswer.playerId ? 3 : 0),
+      (selectedPlayerIds.has(player.id) ? 3 : 0),
   }))
 
   return {
@@ -336,7 +356,7 @@ export function selectWinningAnswer(
       ...state.currentRound,
       phase: "round_result",
       deadlineAt: null,
-      selectedAnswerId: selectedAnswer.id,
+      selectedAnswerIds,
     },
   }
 }
@@ -388,7 +408,7 @@ export function advanceRound(
       deadlineAt: now + state.settings.answerTimeLimitSeconds * 1000,
       originalAnswer: null,
       answers: [],
-      selectedAnswerId: null,
+      selectedAnswerIds: [],
     },
   }
 }
@@ -448,7 +468,7 @@ export function getPlayerGameView(
         ? { originalAnswer: round.originalAnswer }
         : {}),
       answers,
-      selectedAnswerId: round.selectedAnswerId,
+      selectedAnswerIds: round.selectedAnswerIds,
     },
   }
 }

@@ -165,6 +165,7 @@ function GameScreen({ code }: { code: string }) {
           {(phase === "reveal" || phase === "protagonist_selection") && (
             <AnswerReveal
               view={view}
+              canSelect={isProtagonist && phase === "protagonist_selection"}
               isSelecting={game.isSelectingAnswer}
               onSelect={game.selectAnswer}
             />

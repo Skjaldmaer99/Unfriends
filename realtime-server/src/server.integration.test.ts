@@ -91,10 +91,10 @@ function emitAnswer(
 
 function emitSelection(
   socket: TestSocket,
-  answerId: string
+  answerIds: string[]
 ): Promise<EventSuccess<{ selected: true }> | EventFailure> {
   return new Promise((resolve) =>
-    socket.emit("answer:select", { answerId }, resolve)
+    socket.emit("answer:select", { answerIds }, resolve)
   )
 }
 
@@ -294,6 +294,9 @@ describe(
         roundIndex += 1
       ) {
         const roundView = started[0]
+        const scoreBeforeByPlayerId = new Map(
+          roundView.players.map((player) => [player.id, player.score])
+        )
         const protagonistId = roundView.currentRound.protagonistId
         const protagonistSocket = playerSockets.get(protagonistId)
         assert.ok(protagonistSocket)
@@ -387,10 +390,23 @@ describe(
         const completedRounds = activeSockets.map((socket) =>
           waitForEvent(socket, "round:completed")
         )
-        const selectedAnswerId = protagonistView.currentRound.answers[0].id
+        const selectedAnswerIds =
+          roundIndex === testPlayers.length - 1
+            ? protagonistView.currentRound.answers.map((answer) => answer.id)
+            : [protagonistView.currentRound.answers[0].id]
+        if (selectedAnswerIds.length > 1) {
+          const unauthorizedSelection = await emitSelection(
+            remainingGuestSocket,
+            selectedAnswerIds
+          )
+          assert.equal(unauthorizedSelection.ok, false)
+          if (!unauthorizedSelection.ok) {
+            assert.equal(unauthorizedSelection.code, "NOT_PROTAGONIST")
+          }
+        }
         const selectionResult = await emitSelection(
           protagonistSocket,
-          selectedAnswerId
+          selectedAnswerIds
         )
         assert.equal(selectionResult.ok, true)
         const results = (await Promise.all(completedRounds)) as PlayerGameView[]
@@ -419,6 +435,26 @@ describe(
             )
           )
         )
+        if (selectedAnswerIds.length > 1) {
+          const protagonistResult =
+            results[activePlayerIds.indexOf(protagonistId)]
+          assert.equal(
+            protagonistResult.players.find(
+              (player) => player.id === protagonistId
+            )?.score,
+            (scoreBeforeByPlayerId.get(protagonistId) ?? 0) + 1
+          )
+          for (const answer of protagonistResult.currentRound.answers) {
+            if (!selectedAnswerIds.includes(answer.id)) continue
+            const author = protagonistResult.players.find(
+              (player) => player.id === answer.authorId
+            )
+            assert.equal(
+              author?.score,
+              (scoreBeforeByPlayerId.get(answer.authorId ?? "") ?? 0) + 3
+            )
+          }
+        }
 
         if (roundIndex < testPlayers.length - 1) {
           const nextRounds = activeSockets.map((socket) =>
@@ -446,6 +482,17 @@ describe(
           )
           assert.ok(
             gameSummaries.every((summary) => summary.answersSubmitted === 9)
+          )
+          assert.equal(finalViews[0].currentRound.selectedAnswerIds.length, 2)
+          const persistedVotes = await getDatabase()
+            .select({ selectedAnswerId: votes.selectedAnswerId })
+            .from(votes)
+            .innerJoin(rounds, eq(votes.roundId, rounds.id))
+            .where(and(eq(rounds.roomId, roomId!), eq(rounds.roundNumber, 3)))
+          assert.equal(persistedVotes.length, 2)
+          assert.equal(
+            new Set(persistedVotes.map((vote) => vote.selectedAnswerId)).size,
+            2
           )
           const [persistedRoom] = await getDatabase()
             .select({ status: rooms.status })

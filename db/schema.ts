@@ -261,7 +261,11 @@ export const votes = pgTable(
       .defaultNow(),
   },
   (table) => [
-    uniqueIndex("votes_round_voter_unique").on(table.roundId, table.voterId),
+    uniqueIndex("votes_round_voter_answer_unique").on(
+      table.roundId,
+      table.voterId,
+      table.selectedAnswerId
+    ),
     foreignKey({
       name: "votes_round_protagonist_fk",
       columns: [table.roundId, table.voterId],

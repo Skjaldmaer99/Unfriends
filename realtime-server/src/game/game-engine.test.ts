@@ -77,7 +77,7 @@ function finishCurrentRound(state: GameState, now: number): GameState {
   return selectWinningAnswer(
     nextState,
     nextState.currentRound.protagonistId,
-    selectedAnswer.id,
+    [selectedAnswer.id],
     now
   )
 }
@@ -109,7 +109,7 @@ describe("gameplay rules", () => {
 
     state = beginSelection(state, 5_000)
     const selectedAnswer = state.currentRound.answers[0]
-    state = selectWinningAnswer(state, "p1", selectedAnswer.id, 6_000)
+    state = selectWinningAnswer(state, "p1", [selectedAnswer.id], 6_000)
 
     assert.equal(state.currentRound.phase, "round_result")
     assert.deepEqual(
@@ -214,15 +214,15 @@ describe("gameplay rules", () => {
         selectWinningAnswer(
           state,
           "p2",
-          state.currentRound.answers[0].id,
+          [state.currentRound.answers[0].id],
           6_000
         ),
       "NOT_PROTAGONIST"
     )
 
     const selected = state.currentRound.answers[1]
-    state = selectWinningAnswer(state, "p1", selected.id, 6_000)
-    assert.equal(state.currentRound.selectedAnswerId, selected.id)
+    state = selectWinningAnswer(state, "p1", [selected.id], 6_000)
+    assert.deepEqual(state.currentRound.selectedAnswerIds, [selected.id])
     assert.equal(
       state.players.find((player) => player.id === selected.playerId)?.score,
       3
@@ -272,7 +272,52 @@ describe("gameplay rules", () => {
     const selectionState = beginSelection(partialReveal, 63_000)
     const timedOutSelection = expireCurrentPhase(selectionState, 93_001)
     assert.equal(timedOutSelection.currentRound.phase, "round_result")
-    assert.equal(timedOutSelection.currentRound.selectedAnswerId, null)
+    assert.deepEqual(timedOutSelection.currentRound.selectedAnswerIds, [])
     assert.equal(timedOutSelection.players[0].score, 1)
+  })
+
+  it("awards one protagonist point and three points to each distinct selected answer", () => {
+    let state = createThreePlayerGame()
+    state = submitProtagonistAnswer(state, "p1", "Original", 2_000)
+    state = submitPlayerAnswer(state, "p2", "First guess", 3_000)
+    state = submitPlayerAnswer(state, "p3", "Second guess", 4_000)
+    state = beginSelection(state, 5_000)
+
+    const selectionState = state
+    const [firstAnswer, secondAnswer] = state.currentRound.answers
+    state = selectWinningAnswer(
+      state,
+      "p1",
+      [firstAnswer.id, secondAnswer.id],
+      6_000
+    )
+
+    assert.deepEqual(state.currentRound.selectedAnswerIds, [
+      firstAnswer.id,
+      secondAnswer.id,
+    ])
+    assert.deepEqual(
+      state.players.map(({ id, score }) => [id, score]),
+      [
+        ["p1", 1],
+        [firstAnswer.playerId, 3],
+        [secondAnswer.playerId, 3],
+      ]
+    )
+
+    assertRuleError(
+      () => selectWinningAnswer(selectionState, "p1", [], 6_001),
+      "NO_ANSWERS_SELECTED"
+    )
+    assertRuleError(
+      () =>
+        selectWinningAnswer(
+          selectionState,
+          "p1",
+          [firstAnswer.id, firstAnswer.id],
+          6_001
+        ),
+      "DUPLICATE_SELECTED_ANSWER"
+    )
   })
 })

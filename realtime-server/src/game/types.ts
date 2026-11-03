@@ -71,7 +71,7 @@ export interface GameRound {
   deadlineAt: number | null
   originalAnswer: string | null
   answers: GameAnswer[]
-  selectedAnswerId: string | null
+  selectedAnswerIds: string[]
 }
 
 export interface GameState {
@@ -84,48 +84,76 @@ export interface GameState {
   currentRound: GameRound
 }
 
-export const GameStateSnapshotSchema = z.object({
-  status: z.enum(["in_progress", "finished"]),
-  players: z
-    .array(
-      z.object({
-        id: z.string().min(1),
-        nickname: z.string().trim().min(1),
-        avatar: z.string().optional(),
-        score: z.number().int().nonnegative(),
-      })
-    )
-    .min(2),
-  settings: GameSettingsSchema,
-  questionBank: GameQuestionSchema.array().min(1),
-  usedQuestionIds: z.array(z.string().min(1)),
-  totalRounds: z.number().int().positive(),
-  currentRound: z.object({
-    id: z.string().min(1),
-    number: z.number().int().positive(),
-    protagonistId: z.string().min(1),
-    question: GameQuestionSchema,
-    phase: z.enum([
-      "protagonist_answer",
-      "players_answer",
-      "reveal",
-      "protagonist_selection",
-      "round_result",
-      "finished",
-    ]),
-    deadlineAt: z.number().finite().nonnegative().nullable(),
-    originalAnswer: z.string().nullable(),
-    answers: z.array(
-      z.object({
-        id: z.string().min(1),
-        playerId: z.string().min(1),
-        content: z.string().min(1).max(240),
-        createdAt: z.number().finite().nonnegative(),
-      })
-    ),
-    selectedAnswerId: z.string().nullable(),
-  }),
-})
+function normalizeLegacyGameStateSnapshot(snapshot: unknown): unknown {
+  if (!snapshot || typeof snapshot !== "object") return snapshot
+  const record = snapshot as Record<string, unknown>
+  const currentRound = record.currentRound
+  if (!currentRound || typeof currentRound !== "object") return snapshot
+
+  const round = currentRound as Record<string, unknown>
+  if (
+    "selectedAnswerIds" in round ||
+    !Object.prototype.hasOwnProperty.call(round, "selectedAnswerId")
+  ) {
+    return snapshot
+  }
+
+  const { selectedAnswerId, ...legacyRound } = round
+  return {
+    ...record,
+    currentRound: {
+      ...legacyRound,
+      selectedAnswerIds:
+        typeof selectedAnswerId === "string" ? [selectedAnswerId] : [],
+    },
+  }
+}
+
+export const GameStateSnapshotSchema = z.preprocess(
+  normalizeLegacyGameStateSnapshot,
+  z.object({
+    status: z.enum(["in_progress", "finished"]),
+    players: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          nickname: z.string().trim().min(1),
+          avatar: z.string().optional(),
+          score: z.number().int().nonnegative(),
+        })
+      )
+      .min(2),
+    settings: GameSettingsSchema,
+    questionBank: GameQuestionSchema.array().min(1),
+    usedQuestionIds: z.array(z.string().min(1)),
+    totalRounds: z.number().int().positive(),
+    currentRound: z.object({
+      id: z.string().min(1),
+      number: z.number().int().positive(),
+      protagonistId: z.string().min(1),
+      question: GameQuestionSchema,
+      phase: z.enum([
+        "protagonist_answer",
+        "players_answer",
+        "reveal",
+        "protagonist_selection",
+        "round_result",
+        "finished",
+      ]),
+      deadlineAt: z.number().finite().nonnegative().nullable(),
+      originalAnswer: z.string().nullable(),
+      answers: z.array(
+        z.object({
+          id: z.string().min(1),
+          playerId: z.string().min(1),
+          content: z.string().min(1).max(240),
+          createdAt: z.number().finite().nonnegative(),
+        })
+      ),
+      selectedAnswerIds: z.array(z.string().min(1)),
+    }),
+  })
+)
 
 export interface PlayerAnswerView {
   id: string
@@ -149,6 +177,6 @@ export interface PlayerGameView {
     hasSubmittedAnswer: boolean
     originalAnswer?: string
     answers: PlayerAnswerView[]
-    selectedAnswerId: string | null
+    selectedAnswerIds: string[]
   }
 }

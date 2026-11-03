@@ -47,4 +47,26 @@ describe("persisted game state snapshots", () => {
 
     assert.equal(GameStateSnapshotSchema.safeParse(invalidState).success, false)
   })
+
+  it("upgrades a legacy single-winner snapshot while parsing", () => {
+    const state = createGame({
+      players: [
+        { id: "player-1", nickname: "Ada" },
+        { id: "player-2", nickname: "Leo" },
+      ],
+      questions,
+      now: 1_000,
+      random: () => 0,
+    })
+    const legacyRound: Record<string, unknown> = { ...state.currentRound }
+    delete legacyRound.selectedAnswerIds
+    legacyRound.selectedAnswerId = null
+    const legacySnapshot = {
+      ...state,
+      currentRound: legacyRound,
+    }
+
+    const restored = GameStateSnapshotSchema.parse(legacySnapshot)
+    assert.deepEqual(restored.currentRound.selectedAnswerIds, [])
+  })
 })

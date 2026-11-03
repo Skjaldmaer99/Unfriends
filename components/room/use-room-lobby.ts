@@ -565,7 +565,7 @@ export function useRoomLobby(code: string) {
     })
   }
 
-  function selectAnswer(answerId: string): Promise<void> {
+  function selectAnswer(answerIds: string[]): Promise<void> {
     if (!socketRef.current?.connected) {
       setState((current) => ({
         ...current,
@@ -579,7 +579,7 @@ export function useRoomLobby(code: string) {
       actionError: "",
     }))
     return new Promise((resolve) => {
-      socketRef.current?.emit("answer:select", { answerId }, (result) => {
+      socketRef.current?.emit("answer:select", { answerIds }, (result) => {
         setState((current) => ({
           ...current,
           isSelectingAnswer: false,

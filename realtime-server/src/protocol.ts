@@ -23,7 +23,15 @@ export const clientEventSchemas = {
         .refine((content) => !content.includes("\u0000")),
     })
     .strict(),
-  "answer:select": z.object({ answerId: z.string().min(1).max(128) }).strict(),
+  "answer:select": z
+    .object({
+      answerIds: z
+        .array(z.string().min(1).max(128))
+        .min(1)
+        .max(7)
+        .refine((answerIds) => new Set(answerIds).size === answerIds.length),
+    })
+    .strict(),
   "round:next": z.object({}).strict(),
 } as const
 
@@ -81,7 +89,7 @@ export interface ClientToServerEvents {
     ack: EventAck<{ submitted: true }>
   ) => void
   "answer:select": (
-    payload: { answerId: string },
+    payload: { answerIds: string[] },
     ack: EventAck<{ selected: true }>
   ) => void
   "round:next": (

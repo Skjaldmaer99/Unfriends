@@ -665,27 +665,31 @@ function registerGameEvents(
     void runAction(socket, ack, async () => {
       const parsed = clientEventSchemas["answer:select"].parse(payload)
       const game = requireActiveGame(socket.data.roomCode)
-      const databaseAnswerId = game.answerIds.get(parsed.answerId)
-      if (!databaseAnswerId) {
+      const databaseAnswerIds = parsed.answerIds.map((answerId) =>
+        game.answerIds.get(answerId)
+      )
+      if (databaseAnswerIds.some((answerId) => !answerId)) {
         throw new GameRuleError(
           "ANSWER_NOT_FOUND",
-          "The selected answer is invalid."
+          "One or more selected answers are invalid."
         )
       }
       const nextState = selectWinningAnswer(
         game.state,
         socket.data.playerId,
-        parsed.answerId,
+        parsed.answerIds,
         Date.now()
       )
       const database = getDatabase()
 
       await database.transaction(async (transaction) => {
-        await transaction.insert(votes).values({
-          roundId: game.databaseRoundId,
-          voterId: socket.data.playerId,
-          selectedAnswerId: databaseAnswerId,
-        })
+        await transaction.insert(votes).values(
+          databaseAnswerIds.map((selectedAnswerId) => ({
+            roundId: game.databaseRoundId,
+            voterId: socket.data.playerId,
+            selectedAnswerId: selectedAnswerId!,
+          }))
+        )
         for (const player of nextState.players) {
           await transaction
             .update(players)
