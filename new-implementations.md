@@ -422,7 +422,7 @@ Tutte le modalità devono essere selezionabili all'interno della stessa applicaz
 
 La modalità originale deve rimanere disponibile e continuare a funzionare come modalità classica.
 
-## Sottotask 4.1 – Sistema modulare delle modalità
+## Sottotask 4.1 – Sistema modulare delle modalità [x]
 
 Prima di implementare le singole modalità, crea una struttura che permetta di gestire più modalità di gioco senza duplicare il motore principale.
 
@@ -450,7 +450,7 @@ Separa la logica di ciascuna modalità in moduli dedicati.
 
 ---
 
-## Sottotask 4.2 – Modalità CLASSICA: Unfriends
+## Sottotask 4.2 – Modalità CLASSICA: Unfriends [x]
 
 Mantieni la modalità originale.
 
@@ -468,7 +468,7 @@ Questa modalità deve continuare a essere il riferimento per il funzionamento ge
 
 ---
 
-## Sottotask 4.3 – Modalità SITUAZIONI ASSURDE
+## Sottotask 4.3 – Modalità SITUAZIONI ASSURDE [x]
 
 ### Descrizione
 
@@ -508,7 +508,7 @@ Mantieni il sistema di punteggio configurabile e centralizzato.
 
 ---
 
-## Sottotask 4.4 – Modalità IL BLUFF
+## Sottotask 4.4 – Modalità IL BLUFF [ ]
 
 ### Descrizione
 
@@ -568,7 +568,7 @@ Non utilizzare risposte inventate dal modello senza verificarne l'attendibilità
 
 ---
 
-## Sottotask 4.5 – Modalità CHI TRA NOI?
+## Sottotask 4.5 – Modalità CHI TRA NOI? [ ]
 
 ### Descrizione
 
@@ -610,7 +610,7 @@ Mostra:
 
 ---
 
-## Sottotask 4.6 – Modalità IL PERSONAGGIO SEGRETO
+## Sottotask 4.6 – Modalità IL PERSONAGGIO SEGRETO [ ]
 
 ### Descrizione
 
@@ -666,7 +666,7 @@ Ogni scenario deve poter contenere:
 
 ---
 
-## Sottotask 4.7 – CAOS MODE
+## Sottotask 4.7 – CAOS MODE [ ]
 
 ### Descrizione
 
@@ -714,7 +714,7 @@ Non implementare effetti che rendano impossibile completare un round o che perme
 
 Permettere all'host di scegliere quale modalità utilizzare prima di iniziare una partita.
 
-### Sottotask 5.1 – Interfaccia di selezione
+### Sottotask 5.1 – Interfaccia di selezione [x]
 
 Nella lobby aggiungi una sezione dedicata alla selezione della modalità.
 
@@ -732,14 +732,14 @@ Le modalità devono essere facilmente distinguibili.
 
 Mantieni lo stile grafico già presente nell'applicazione.
 
-### Sottotask 5.2 – Permessi
+### Sottotask 5.2 – Permessi [x]
 
 - Soltanto l'host può modificare la modalità.
 - Gli altri giocatori possono visualizzare la modalità selezionata.
 - Quando l'host cambia modalità, tutti i giocatori devono ricevere l'aggiornamento realtime.
 - Non permettere di cambiare modalità dopo l'inizio della partita.
 
-### Sottotask 5.3 – Validazione giocatori
+### Sottotask 5.3 – Validazione giocatori [x]
 
 Prima dell'avvio:
 
@@ -747,7 +747,7 @@ Prima dell'avvio:
 - Verifica eventuali requisiti specifici della modalità.
 - Mostra un messaggio comprensibile se non è possibile iniziare.
 
-### Sottotask 5.4 – Impostazioni partita
+### Sottotask 5.4 – Impostazioni partita [ ]
 
 Prevedi impostazioni configurabili dall'host, dove pertinenti:
 
@@ -760,6 +760,14 @@ Prevedi impostazioni configurabili dall'host, dove pertinenti:
 Non mostrare impostazioni che non hanno effetto sulla modalità selezionata.
 
 ---
+
+### Esito Task 4 e Task 5 (parziale)
+
+- Il registry condiviso in `realtime-server/src/game/game-modes.ts` definisce metadati, intervallo giocatori/round, fasi, azioni, regole, condizione di conclusione e scoring. Le regole di voto e risoluzione di Situazioni Assurde sono isolate in `realtime-server/src/game/modes/absurd-situations.ts`; il motore mantiene il ciclo di vita comune.
+- Classica resta invariata nel comportamento e nello scoring. Situazioni Assurde è giocabile: tutti rispondono, le risposte e i voti restano anonimi durante la fase, ciascuno vota una risposta altrui una sola volta, i pareggi condividono i punti e chi vota una risposta vincente riceve il bonus configurato. La scadenza chiude la votazione anche con voti parziali.
+- La lobby mostra card con icone, descrizioni e limiti giocatori. Solo l'host può cambiare modalità; l'aggiornamento arriva a tutti via `room:updated`. Il server valida la disponibilità e il numero di giocatori anche all'avvio. Round e timer restano configurabili e si applicano anche a Situazioni Assurde.
+- Bluff, Chi tra noi?, Personaggio segreto, Caos Mode e le opzioni non ancora operative restano disabilitati/non esposti come impostazioni selezionabili.
+- Verifica: `npm test` (13 test room/HTTP e 32 realtime, inclusi E2E PostgreSQL per voto segreto, auto-voto e voto duplicato respinti, pareggio a tre, punteggi, persistenza prompt e broadcast lobby), typecheck app/server, lint senza warning e build production Next passano. Migrazioni 0003/0004 applicate e prompt Assurde seedati.
 
 # TASK 6 – SISTEMA CONDIVISO DI PUNTEGGIO E CLASSIFICA
 

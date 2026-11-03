@@ -1,0 +1,4 @@
+ALTER TABLE "rounds" ALTER COLUMN "question_id" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "rounds" ADD COLUMN "game_prompt_id" uuid;--> statement-breakpoint
+ALTER TABLE "rounds" ADD CONSTRAINT "rounds_game_prompt_id_game_prompts_id_fk" FOREIGN KEY ("game_prompt_id") REFERENCES "public"."game_prompts"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "rounds" ADD CONSTRAINT "rounds_question_source_check" CHECK (("rounds"."question_id" is not null and "rounds"."game_prompt_id" is null) or ("rounds"."question_id" is null and "rounds"."game_prompt_id" is not null));
