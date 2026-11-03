@@ -14,7 +14,7 @@ import {
   rounds,
   votes,
 } from "../../db/schema"
-import { getDatabase } from "../../lib/database"
+import { closeDatabase, getDatabase } from "../../lib/database"
 import { createFixedWindowRateLimiter } from "../../lib/fixed-window-rate-limiter.js"
 import { leaveRoomForPlayer, RoomServiceError } from "../../lib/room-service"
 import {
@@ -72,6 +72,7 @@ interface RealtimeServerOptions {
 const activeGames = new Map<string, ActiveGame>()
 const recoveringGames = new Map<string, Promise<ActiveGame | null>>()
 const roomActionQueues = new Map<string, Promise<void>>()
+const pendingServerTasks = new Set<Promise<void>>()
 const readyPlayers = new Map<string, Map<string, boolean>>()
 const revealTimers = new Map<string, NodeJS.Timeout>()
 const phaseTimers = new Map<string, NodeJS.Timeout>()
@@ -193,15 +194,17 @@ export function createRealtimeServer(options: RealtimeServerOptions = {}): {
   })
 
   io.on("connection", (socket) => {
-    void handleConnection(io, socket).catch((error: unknown) => {
-      console.error("Socket connection setup failed.", error)
-      socket.emit("room:error", {
-        ok: false,
-        code: "CONNECTION_SETUP_FAILED",
-        error: "The room state could not be loaded.",
+    trackServerTask(
+      handleConnection(io, socket).catch((error: unknown) => {
+        console.error("Socket connection setup failed.", error)
+        socket.emit("room:error", {
+          ok: false,
+          code: "CONNECTION_SETUP_FAILED",
+          error: "The room state could not be loaded.",
+        })
+        socket.disconnect(true)
       })
-      socket.disconnect(true)
-    })
+    )
   })
 
   return { httpServer, io }
@@ -213,7 +216,34 @@ export function listenRealtimeServer(): void {
     throw new Error("PORT must be a valid TCP port.")
   }
 
-  const { httpServer } = createRealtimeServer()
+  const { httpServer, io } = createRealtimeServer()
+  let isShuttingDown = false
+
+  const shutdown = (signal: NodeJS.Signals) => {
+    if (isShuttingDown) return
+    isShuttingDown = true
+    console.info(`Received ${signal}; shutting down realtime server.`)
+
+    for (const timer of phaseTimers.values()) clearTimeout(timer)
+    for (const timer of revealTimers.values()) clearTimeout(timer)
+    phaseTimers.clear()
+    revealTimers.clear()
+
+    io.close(() => {
+      void Promise.all([...roomActionQueues.values(), ...pendingServerTasks])
+        .then(() => closeDatabase())
+        .then(() => {
+          console.info("Realtime server shut down cleanly.")
+        })
+        .catch((error: unknown) => {
+          console.error("Realtime server shutdown failed.", error)
+          process.exitCode = 1
+        })
+    })
+  }
+
+  process.once("SIGTERM", shutdown)
+  process.once("SIGINT", shutdown)
   httpServer.listen(port, "0.0.0.0", () => {
     console.info(`Realtime server listening on port ${port}.`)
   })
@@ -299,10 +329,12 @@ async function handleConnection(
   registerRoomEvents(io, socket)
   registerGameEvents(io, socket)
   socket.on("disconnect", () => {
-    void handleDisconnection(io, socket, priorPlayer.nickname).catch(
-      (error: unknown) => {
-        console.error("Socket disconnection handling failed.", error)
-      }
+    trackServerTask(
+      handleDisconnection(io, socket, priorPlayer.nickname).catch(
+        (error: unknown) => {
+          console.error("Socket disconnection handling failed.", error)
+        }
+      )
     )
   })
 
@@ -1434,6 +1466,15 @@ function requireActiveGame(roomCode: string): ActiveGame {
     )
   }
   return game
+}
+
+function trackServerTask(task: Promise<void>): void {
+  const trackedTask = task
+    .catch((error: unknown) => {
+      console.error("Background realtime task failed.", error)
+    })
+    .finally(() => pendingServerTasks.delete(trackedTask))
+  pendingServerTasks.add(trackedTask)
 }
 
 async function runAction<T>(

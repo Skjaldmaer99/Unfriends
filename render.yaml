@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: unfriends-realtime
+    runtime: node
+    plan: 0.5c-512mb
+    buildCommand: npm ci --include=dev && npm run typecheck --workspace @unfriends/realtime-server
+    preDeployCommand: npm run db:migrate
+    startCommand: npm run start --workspace @unfriends/realtime-server
+    healthCheckPath: /healthz
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SOCKET_TICKET_SECRET
+        generateValue: true
+      - key: SOCKET_ALLOWED_ORIGINS
+        sync: false

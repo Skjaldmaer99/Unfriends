@@ -14,7 +14,7 @@ Party game multiplayer per gruppi di amici: a ogni turno un protagonista rispond
 | Realtime    | Node.js, TypeScript, Socket.IO                        | Server indipendente con autenticazione, lobby e gameplay implementato        |
 | Validazione | Zod                                                   | Installato nell'app e nel workspace realtime                                 |
 | Persistenza | PostgreSQL, Drizzle ORM e Drizzle Kit                 | Schema, migrazione e seed implementati; applicazione richiede `DATABASE_URL` |
-| Test        | Da scegliere in Task 13 in base ai confini dei moduli | Da implementare                                                              |
+| Test        | Node.js test runner, TypeScript e Socket.IO clients   | Unit, HTTP e realtime integration suite (`npm test`)                         |
 
 Il progetto esistente è un'app Next.js alla radice del repository, non un monorepo. Per l'MVP manterremo questa app alla radice e aggiungeremo un servizio `realtime-server/`; estrarre il frontend in `frontend/` non offre un vantaggio immediato e comporterebbe spostamenti non necessari. I contratti condivisi saranno isolati in `packages/shared/` quando verranno introdotti.
 
@@ -101,7 +101,7 @@ Le modalità aggiuntive, i profili, gli amici e le classifiche globali restano f
 | 11. Stato e sessioni          | Completata              | Snapshot persistente, recovery Socket.IO e sessioni recuperabili.                  |
 | 12. Sicurezza e validazione   | Completata              | Zod strict, body cap, autorizzazioni e rate limit HTTP/realtime.                   |
 | 13. Testing                   | Completata              | Suite aggregata, copertura unit/HTTP e partita realtime integrale con reconnect.   |
-| 14. Deployment                | Da iniziare             | Vercel, Render e PostgreSQL.                                                       |
+| 14. Deployment                | Completata              | Manifest Vercel/Render, migrations pre-deploy, env e shutdown graceful.            |
 | 15. Funzionalità future       | Non pianificata per MVP | Architettura estendibile senza implementare queste feature ora.                    |
 
 ## Avvio locale
@@ -149,6 +149,20 @@ npm run dev --workspace @unfriends/realtime-server
 
 Configura lo stesso `SOCKET_TICKET_SECRET` anche per Next.js. In produzione, `SOCKET_ALLOWED_ORIGINS` deve elencare origini HTTPS precise separate da virgole; i wildcard sono rifiutati. L'endpoint `GET /api/rooms/[code]/socket-ticket` emette un ticket valido 60 secondi dopo aver verificato il cookie giocatore. Creazione e join stanza usano le API HTTP; avvio, presenza e gameplay usano Socket.IO.
 
+## Deployment
+
+La root del repository è il progetto Next.js per Vercel; `vercel.json` dichiara framework/build e header HTTPS di base. Collega il repository a Vercel mantenendo la root directory predefinita e configura queste variabili per Production (e per Preview se si usano deployment preview):
+
+- `DATABASE_URL`: URL PostgreSQL del provider scelto.
+- `SOCKET_TICKET_SECRET`: segreto casuale di almeno 32 byte; deve corrispondere al valore Render.
+- `NEXT_PUBLIC_REALTIME_URL`: URL HTTPS pubblico del servizio Render, disponibile durante la build perché viene incorporato nel bundle client.
+
+Il file `render.yaml` definisce il realtime Node come servizio web con `/healthz`, migrazione Drizzle in pre-deploy e shutdown delay di 30 secondi. Importa il Blueprint dal repository e fornisci `DATABASE_URL` e `SOCKET_ALLOWED_ORIGINS`; `SOCKET_TICKET_SECRET` viene generato da Render. Copia quel valore in Vercel senza inserirlo nel repository. `SOCKET_ALLOWED_ORIGINS` deve contenere solo l'origine HTTPS di produzione Vercel e gli eventuali domini custom; aggiungi una preview origin solo se serve davvero. Render fornisce `PORT`, già letto dal server.
+
+Il Blueprint usa il piano Render `0.5c-512mb` a pagamento: Render richiede un piano paid per `preDeployCommand`, e un servizio always-on evita lo spin-down durante le partite. Verifica costi e piano nel dashboard prima di creare il servizio. Mantieni una sola istanza realtime: stato attivo, code d'azione e rate limit sono per-processo; non abilitare autoscaling multi-istanza senza introdurre coordinamento condiviso.
+
+Esegui migrazioni con `npm run db:migrate` prima di spostare un database esistente; nei deploy Render successivi vengono applicate automaticamente dal pre-deploy. Il seed iniziale è un'operazione manuale una tantum (`npm run db:seed`) usando una connessione amministrata. Non avviare `db:seed` a ogni deploy. I valori reali delle variabili restano nei dashboard dei provider e non in Git.
+
 ## Decisioni e verifiche iniziali
 
 - La versione installata è Next.js 16.4.3 con App Router; le convenzioni sono state verificate nella documentazione installata in `node_modules/next/dist/docs/`.
@@ -178,4 +192,6 @@ Configura lo stesso `SOCKET_TICKET_SECRET` anche per Next.js. In produzione, `SO
 - Verifica Task 12: test deterministici del fixed-window limiter, chiavi proxy, 413 per body oversize, 429/`Retry-After`, nickname e payload annidati sconosciuti. Passano lint, build, typecheck app/server, 13 test room/HTTP, 20 realtime, Prettier e `git diff --check`. Limite residuo: i contatori sono in memoria per processo; deployment serverless o multi-istanza richiederà uno store condiviso o rate limiting all'edge. La chiave IP HTTP si basa sugli header forwarded configurati dal proxy.
 - Task 13: aggiunto `npm test` come comando aggregato. Le suite coprono funzioni pure (motore, scoring, rotazione, summary, rate limiter, sessioni e validazione HTTP), route helper (body cap/errori) e server Socket.IO autenticato. Il test d'integrazione usa `createRoom`/`joinRoom` e PostgreSQL, avvia una partita completa a 3 giocatori, prova host authorization, privacy originale/autori durante reveal e visibilità al risultato, reconnect con risposta già inviata, punteggi, game summary e stato persistito `finished`; pulisce room e pool.
 - Verifica Task 13: `npm test` passa con 13 test room/HTTP e 21 test realtime, senza skip nell'ambiente locale con PostgreSQL. Passano inoltre lint senza warning, typecheck app/server, build Next, Prettier e `git diff --check`. In ambienti senza `DATABASE_URL`, il solo test d'integrazione PostgreSQL viene saltato; le altre suite restano autonome.
+- Task 14: `vercel.json` seleziona il preset Next.js, `npm ci` e build e aggiunge HSTS/nosniff/frame/referrer/permissions headers; `render.yaml` configura il realtime Node, health check, migrazione pre-deploy, env variabili e shutdown. `listenRealtimeServer` gestisce `SIGTERM`/`SIGINT`, cancella timer, chiude Socket.IO, attende le azioni accodate e chiude il pool PostgreSQL. `.env.example` elenca tutte le variabili locali.
+- Verifica Task 14: schema YAML Render analizzato, `vercel.json` parsato come JSON, typecheck app/server, lint, test, build e Prettier passano. Deploy effettivo non eseguito: richiede account/provider, URL database, dominio Vercel e inserimento manuale dei segreti. Il Blueprint Render usa un piano paid per pre-deploy/always-on e una sola istanza per i limiti di stato documentati.
 - Nota dipendenze: `npm install` ha riportato vulnerabilità nel dependency tree, da valutare senza aggiornamenti automatici non revisionati.
