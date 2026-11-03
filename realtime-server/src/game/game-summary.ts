@@ -1,4 +1,5 @@
 import type { GamePlayer } from "./types.js"
+import type { GameMode } from "./types.js"
 
 export interface SummaryRoundRecord {
     id: string
@@ -8,7 +9,7 @@ export interface SummaryRoundRecord {
 export interface SummaryAnswerRecord {
     id: string
     roundId: string
-    playerId: string
+    playerId: string | null
     content: string
     isOriginalAnswer: boolean
 }
@@ -19,6 +20,7 @@ export interface SummaryVoteRecord {
 }
 
 export interface SummaryInput {
+    mode?: GameMode
     players: readonly GamePlayer[]
     rounds: readonly SummaryRoundRecord[]
     answers: readonly SummaryAnswerRecord[]
@@ -38,12 +40,14 @@ export interface GameSummary {
     votesCast: number
     winningVotes: number
     winningAnswers: number
+    correctVotes: number
     originalAnswersGuessedExactly: number
     exactGuessPercentage: number
     recognitions: GameRecognition[]
 }
 
 export function buildGameSummary(input: SummaryInput): GameSummary {
+    const mode = input.mode ?? "classic"
     const answersById = new Map(
         input.answers.map((answer) => [answer.id, answer])
     )
@@ -94,10 +98,12 @@ export function buildGameSummary(input: SummaryInput): GameSummary {
 
         const selected = answersById.get(vote.selectedAnswerId)
         if (!selected || selected.isOriginalAnswer) continue
-        selectedAnswersByPlayer.set(
-            selected.playerId,
-            (selectedAnswersByPlayer.get(selected.playerId) ?? 0) + 1
-        )
+        if (selected.playerId) {
+            selectedAnswersByPlayer.set(
+                selected.playerId,
+                (selectedAnswersByPlayer.get(selected.playerId) ?? 0) + 1
+            )
+        }
     }
 
     const winningAnswerIds = new Set<string>()
@@ -112,6 +118,9 @@ export function buildGameSummary(input: SummaryInput): GameSummary {
     const winningVotes = input.votes.filter((vote) =>
         winningAnswerIds.has(vote.selectedAnswerId)
     ).length
+    const correctVotes = input.votes.filter((vote) =>
+        answersById.get(vote.selectedAnswerId)?.isOriginalAnswer
+    ).length
 
     const recognitions: GameRecognition[] = []
     const mostSelected = findLeaders(
@@ -121,41 +130,59 @@ export function buildGameSummary(input: SummaryInput): GameSummary {
     if (mostSelected.value > 0) {
         for (const player of mostSelected.players) {
             recognitions.push({
-                title: "Miglior osservatore",
+                title:
+                    mode === "bluff"
+                        ? "Bluff più convincente"
+                        : mode === "who_among_us"
+                            ? "Più votato"
+                            : "Miglior osservatore",
                 playerId: player.id,
                 nickname: player.nickname,
-                detail: `${mostSelected.value} risposte scelte`,
+                detail:
+                    mode === "bluff"
+                        ? `${mostSelected.value} ${mostSelected.value === 1 ? "voto" : "voti"} al bluff`
+                        : mode === "who_among_us"
+                            ? `${mostSelected.value} ${mostSelected.value === 1 ? "voto ricevuto" : "voti ricevuti"}`
+                            : `${mostSelected.value} risposte scelte`,
             })
         }
     }
 
-    const hardestToGuess = findLeaders(input.players, (player) => {
-        const protagonistRounds = protagonistRoundsByPlayer.get(player.id) ?? 0
-        const guessed = exactMatchesByPlayer.get(player.id) ?? 0
-        return Math.max(0, protagonistRounds - guessed)
-    })
-    if (hardestToGuess.value > 0) {
-        for (const player of hardestToGuess.players) {
+    if (mode === "classic") {
+        const hardestToGuess = findLeaders(input.players, (player) => {
             const protagonistRounds = protagonistRoundsByPlayer.get(player.id) ?? 0
             const guessed = exactMatchesByPlayer.get(player.id) ?? 0
-            recognitions.push({
-                title: "Il più difficile da indovinare",
-                playerId: player.id,
-                nickname: player.nickname,
-                detail: `${guessed} risposte esatte su ${protagonistRounds}`,
-            })
+            return Math.max(0, protagonistRounds - guessed)
+        })
+        if (hardestToGuess.value > 0) {
+            for (const player of hardestToGuess.players) {
+                const protagonistRounds = protagonistRoundsByPlayer.get(player.id) ?? 0
+                const guessed = exactMatchesByPlayer.get(player.id) ?? 0
+                recognitions.push({
+                    title: "Il più difficile da indovinare",
+                    playerId: player.id,
+                    nickname: player.nickname,
+                    detail: `${guessed} risposte esatte su ${protagonistRounds}`,
+                })
+            }
         }
     }
 
     return {
         roundsPlayed: input.rounds.length,
-        answersSubmitted: input.answers.length,
+        answersSubmitted:
+            mode === "bluff"
+                ? input.answers.filter((answer) => !answer.isOriginalAnswer).length
+                : mode === "who_among_us"
+                    ? 0
+                    : input.answers.length,
         votesCast: input.votes.length,
         winningVotes,
         winningAnswers: winningAnswerIds.size,
-        originalAnswersGuessedExactly: exactMatches,
+        correctVotes,
+        originalAnswersGuessedExactly: mode === "classic" ? exactMatches : 0,
         exactGuessPercentage:
-            input.rounds.length === 0
+            mode !== "classic" || input.rounds.length === 0
                 ? 0
                 : Math.round((exactMatches / input.rounds.length) * 100),
         recognitions,

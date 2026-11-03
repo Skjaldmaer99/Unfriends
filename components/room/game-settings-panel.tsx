@@ -231,6 +231,24 @@ function GameSettingsPanel({
                 </div>
             </div>
 
+            {draft.mode === "who_among_us" && (
+                <label className="flex min-h-11 cursor-pointer items-center gap-3 border-b border-border py-2 text-sm font-medium">
+                    <input
+                        className="size-4 accent-brand-teal"
+                        type="checkbox"
+                        checked={draft.scoringEnabled}
+                        disabled={disabled || saving}
+                        onChange={(event) =>
+                            setDraft({
+                                ...draft,
+                                scoringEnabled: event.target.checked,
+                            })
+                        }
+                    />
+                    <span>Punteggio attivo</span>
+                </label>
+            )}
+
             <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
                     <h3 className="text-sm font-semibold">Categorie</h3>

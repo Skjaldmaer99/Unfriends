@@ -36,14 +36,17 @@ function AnswerReveal({
     )
     const selectingPhase = view.currentRound.phase === "protagonist_selection"
     const isAbsurdMode = view.mode === "absurd_situations"
+    const isBluffMode = view.mode === "bluff"
+    const isWhoAmongUsMode = view.mode === "who_among_us"
+    const isBallotMode = isAbsurdMode || isBluffMode || isWhoAmongUsMode
     const hasSubmittedVote = currentRound.hasSubmittedVote
-    const selectionLimit = isAbsurdMode ? 1 : Number.POSITIVE_INFINITY
+    const selectionLimit = isBallotMode ? 1 : Number.POSITIVE_INFINITY
 
     function toggleAnswer(answerId: string) {
         const currentSelection = hasLocalSelection
             ? localSelection.answerIds
             : currentRound.selectedAnswerIds
-        const answerIds = isAbsurdMode
+        const answerIds = isBallotMode
             ? currentSelection.includes(answerId)
                 ? []
                 : [answerId]
@@ -66,27 +69,47 @@ function AnswerReveal({
                 <div>
                     <h2 id="reveal-title" className="font-heading text-xl font-bold">
                         {selectingPhase
-                            ? isAbsurdMode
-                                ? "Quale risposta fa più ridere?"
-                                : "Quale risposta ti somiglia di più?"
-                            : isAbsurdMode
-                                ? "Ecco le risposte"
-                                : "Ecco le ipotesi"}
+                            ? isBluffMode
+                                ? "Quale opzione è vera?"
+                                : isWhoAmongUsMode
+                                    ? "Chi si adatta di più alla situazione?"
+                                    : isAbsurdMode
+                                        ? "Quale risposta fa più ridere?"
+                                        : "Quale risposta ti somiglia di più?"
+                            : isBluffMode
+                                ? "Opzioni anonime"
+                                : isWhoAmongUsMode
+                                    ? "Voto segreto"
+                                    : isAbsurdMode
+                                        ? "Ecco le risposte"
+                                        : "Ecco le ipotesi"}
                     </h2>
                     <p
                         className="mt-1 text-sm text-muted-foreground"
-                        role={isAbsurdMode ? "status" : undefined}
-                        aria-live={isAbsurdMode ? "polite" : undefined}
+                        role={isBallotMode ? "status" : undefined}
+                        aria-live={isBallotMode ? "polite" : undefined}
                     >
-                        {isAbsurdMode
+                        {isWhoAmongUsMode
                             ? hasSubmittedVote
                                 ? `Voto registrato. ${currentRound.voteCount} di ${currentRound.requiredVoteCount} voti raccolti.`
                                 : canSelect
-                                    ? `Scegli una risposta diversa dalla tua. Voti: ${currentRound.voteCount} di ${currentRound.requiredVoteCount}; i risultati restano segreti fino alla fine.`
-                                    : `Votazione segreta: ${currentRound.voteCount} di ${currentRound.requiredVoteCount} voti raccolti.`
-                            : canSelect
-                                ? "Seleziona tutte le risposte che ti somigliano. Conferma quando hai finito; i nomi si scoprono dopo."
-                                : `${protagonist?.nickname ?? "Il protagonista"} sta scegliendo la risposta più vicina.`}
+                                    ? `Scegli una persona diversa da te. Voti: ${currentRound.voteCount} di ${currentRound.requiredVoteCount}; i risultati restano segreti fino alla fine.`
+                                    : `Voto segreto: ${currentRound.voteCount} di ${currentRound.requiredVoteCount} voti raccolti.`
+                            : isBluffMode
+                                ? hasSubmittedVote
+                                    ? `Voto registrato. ${currentRound.voteCount} di ${currentRound.requiredVoteCount} voti raccolti.`
+                                    : canSelect
+                                        ? `Scegli un'opzione diversa dal tuo bluff. Voti: ${currentRound.voteCount} di ${currentRound.requiredVoteCount}; correttezza e autori si rivelano alla fine.`
+                                        : `Voto segreto: ${currentRound.voteCount} di ${currentRound.requiredVoteCount} voti raccolti.`
+                                : isAbsurdMode
+                                    ? hasSubmittedVote
+                                        ? `Voto registrato. ${currentRound.voteCount} di ${currentRound.requiredVoteCount} voti raccolti.`
+                                        : canSelect
+                                            ? `Scegli una risposta diversa dalla tua. Voti: ${currentRound.voteCount} di ${currentRound.requiredVoteCount}; i risultati restano segreti fino alla fine.`
+                                            : `Votazione segreta: ${currentRound.voteCount} di ${currentRound.requiredVoteCount} voti raccolti.`
+                                    : canSelect
+                                        ? "Seleziona tutte le risposte che ti somigliano. Conferma quando hai finito; i nomi si scoprono dopo."
+                                        : `${protagonist?.nickname ?? "Il protagonista"} sta scegliendo la risposta più vicina.`}
                     </p>
                 </div>
             </div>
@@ -122,9 +145,13 @@ function AnswerReveal({
                                     </span>
                                     <span className="flex-1">
                                         {answer.content}
-                                        {isAbsurdMode && isOwnAnswer && (
+                                        {isBallotMode && isOwnAnswer && (
                                             <span className="mt-2 block text-xs font-semibold text-muted-foreground">
-                                                La tua risposta
+                                                {isWhoAmongUsMode
+                                                    ? "Non puoi votare te stesso"
+                                                    : isBluffMode
+                                                        ? "Il tuo bluff"
+                                                        : "La tua risposta"}
                                             </span>
                                         )}
                                     </span>
@@ -157,7 +184,7 @@ function AnswerReveal({
                     >
                         {isSelecting
                             ? "Conferma in corso…"
-                            : isAbsurdMode
+                            : isBallotMode
                                 ? "Invia voto"
                                 : `Conferma ${selectedAnswerIds.length > 0 ? `(${selectedAnswerIds.length})` : "selezione"}`}
                         <Check aria-hidden="true" />

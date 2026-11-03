@@ -46,8 +46,16 @@ function QuestionCard({ view }: QuestionCardProps) {
                     <Badge variant="accent">
                         {categoryLabels[round.question.category] ?? "Domanda"}
                     </Badge>
-                    {view.mode === "absurd_situations" ? (
-                        <Badge variant="secondary">Tutti rispondono</Badge>
+                    {view.mode === "absurd_situations" ||
+                        view.mode === "bluff" ||
+                        view.mode === "who_among_us" ? (
+                        <Badge variant="secondary">
+                            {view.mode === "bluff"
+                                ? "Tutti scrivono un bluff"
+                                : view.mode === "who_among_us"
+                                    ? "Voto segreto"
+                                    : "Tutti rispondono"}
+                        </Badge>
                     ) : protagonist ? (
                         <Badge variant="secondary">
                             Protagonista: {protagonist.nickname}

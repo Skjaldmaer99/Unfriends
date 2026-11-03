@@ -33,6 +33,8 @@ describe("game mode registry", () => {
                     mode.scoring.winningAnswerPoints >= 0 &&
                     mode.scoring.selectorPoints >= 0 &&
                     mode.scoring.winningVoteBonus >= 0 &&
+                    mode.scoring.correctAnswerPoints >= 0 &&
+                    mode.scoring.bluffPerVotePoints >= 0 &&
                     mode.completionCondition.length > 0
             )
         )
@@ -60,11 +62,13 @@ describe("game mode registry", () => {
     it("exposes only implemented modes as selectable", () => {
         assert.deepEqual(
             AVAILABLE_GAME_MODES.map((mode) => mode.id),
-            ["classic", "absurd_situations"]
+            ["classic", "absurd_situations", "bluff", "who_among_us"]
         )
         assert.equal(getGameModeDefinition("classic").status, "available")
         assert.equal(getGameModeDefinition("absurd_situations").status, "available")
-        assert.equal(getGameModeDefinition("bluff").status, "planned")
+        assert.equal(getGameModeDefinition("bluff").status, "available")
+        assert.equal(getGameModeDefinition("who_among_us").status, "available")
+        assert.equal(getGameModeDefinition("secret_character").status, "planned")
     })
 
     it("keeps chaos events scoped to compatible modes and valid duration", () => {

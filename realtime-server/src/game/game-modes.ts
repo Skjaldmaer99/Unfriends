@@ -11,6 +11,8 @@ export interface GameModeScoring {
     winningAnswerPoints: number
     selectorPoints: number
     winningVoteBonus: number
+    correctAnswerPoints: number
+    bluffPerVotePoints: number
 }
 
 export interface GameModeDefinition {
@@ -58,6 +60,8 @@ export const GAME_MODE_DEFINITIONS: readonly GameModeDefinition[] = [
             winningAnswerPoints: 3,
             selectorPoints: 1,
             winningVoteBonus: 0,
+            correctAnswerPoints: 0,
+            bluffPerVotePoints: 0,
         },
         rules: [
             "Il protagonista risponde in privato.",
@@ -97,6 +101,8 @@ export const GAME_MODE_DEFINITIONS: readonly GameModeDefinition[] = [
             winningAnswerPoints: 3,
             selectorPoints: 0,
             winningVoteBonus: 1,
+            correctAnswerPoints: 0,
+            bluffPerVotePoints: 0,
         },
         rules: [
             "Tutti inviano una risposta anonima.",
@@ -119,13 +125,23 @@ export const GAME_MODE_DEFINITIONS: readonly GameModeDefinition[] = [
         icon: "eye",
         minPlayers: 3,
         maxPlayers: 8,
-        status: "planned",
+        status: "available",
         roundsPerPlayer: { min: 1, max: 5 },
-        phases: [],
-        actions: [],
-        scoring: { winningAnswerPoints: 0, selectorPoints: 0, winningVoteBonus: 0 },
-        rules: [],
-        completionCondition: "Da definire prima di rendere disponibile la modalità.",
+        phases: ["players_answer", "reveal", "protagonist_selection", "round_result", "finished"],
+        actions: ["submit_answer", "vote_answer", "advance_round"],
+        scoring: {
+            winningAnswerPoints: 0,
+            selectorPoints: 0,
+            winningVoteBonus: 0,
+            correctAnswerPoints: 2,
+            bluffPerVotePoints: 1,
+        },
+        rules: [
+            "Ogni giocatore scrive un bluff anonimo.",
+            "Il server aggiunge la risposta verificata e mescola le opzioni.",
+            "Ogni giocatore vota una sola opzione e non può votare il proprio bluff.",
+        ],
+        completionCondition: "Il voto si chiude quando tutti votano o scade il timer.",
         categories: ["general_knowledge"],
     },
     {
@@ -135,13 +151,23 @@ export const GAME_MODE_DEFINITIONS: readonly GameModeDefinition[] = [
         icon: "users-round",
         minPlayers: 3,
         maxPlayers: 8,
-        status: "planned",
+        status: "available",
         roundsPerPlayer: { min: 1, max: 5 },
-        phases: [],
-        actions: [],
-        scoring: { winningAnswerPoints: 0, selectorPoints: 0, winningVoteBonus: 0 },
-        rules: [],
-        completionCondition: "Da definire prima di rendere disponibile la modalità.",
+        phases: ["protagonist_selection", "round_result", "finished"],
+        actions: ["vote_answer", "advance_round"],
+        scoring: {
+            winningAnswerPoints: 2,
+            selectorPoints: 0,
+            winningVoteBonus: 1,
+            correctAnswerPoints: 0,
+            bluffPerVotePoints: 0,
+        },
+        rules: [
+            "Ogni giocatore vota in segreto un altro partecipante.",
+            "I pareggi condividono i punti per il giocatore più votato.",
+            "Il punteggio è disattivabile dalle impostazioni della partita.",
+        ],
+        completionCondition: "Il voto si chiude quando tutti votano o scade il timer.",
         categories: [
             "absurd",
             "everyday_life",
@@ -163,7 +189,7 @@ export const GAME_MODE_DEFINITIONS: readonly GameModeDefinition[] = [
         roundsPerPlayer: { min: 1, max: 5 },
         phases: [],
         actions: [],
-        scoring: { winningAnswerPoints: 0, selectorPoints: 0, winningVoteBonus: 0 },
+        scoring: { winningAnswerPoints: 0, selectorPoints: 0, winningVoteBonus: 0, correctAnswerPoints: 0, bluffPerVotePoints: 0 },
         rules: [],
         completionCondition: "Da definire prima di rendere disponibile la modalità.",
         categories: ["everyday_life", "travel", "relationships", "fantasy"],

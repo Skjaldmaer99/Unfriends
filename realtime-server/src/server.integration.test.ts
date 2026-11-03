@@ -336,6 +336,545 @@ describe(
             }
         })
 
+        it("plays all Bluff rounds without revealing the fact before vote resolution", async (testContext) => {
+            const scopedSockets = new Set<TestSocket>()
+            testContext.after(async () => {
+                for (const socket of scopedSockets) socket.disconnect()
+                await waitForRoomDisconnections()
+                await cleanTestRoom()
+            })
+
+            const testPlayers = await createTestRoom()
+            const playerSockets = new Map<string, TestSocket>()
+            for (const player of testPlayers) {
+                const socket = await connectPlayer(player)
+                scopedSockets.add(socket)
+                playerSockets.set(player.id, socket)
+            }
+            const hostSocket = playerSockets.get(testPlayers[0].id)
+            assert.ok(hostSocket)
+
+            const [roomSettings] = await getDatabase()
+                .select({ settings: rooms.settings })
+                .from(rooms)
+                .where(eq(rooms.id, roomId!))
+                .limit(1)
+            assert.equal(
+                (
+                    await emitRoomSettings(hostSocket, {
+                        ...roomSettings.settings,
+                        mode: "bluff",
+                        roundsPerPlayer: 1,
+                        enabledCategories: ["general_knowledge"],
+                    })
+                ).ok,
+                true
+            )
+
+            const startEvents = [...playerSockets.values()].map((socket) =>
+                waitForEvent(socket, "game:started")
+            )
+            assert.equal((await emitRoomStart(hostSocket)).ok, true)
+            let currentViews = (await Promise.all(startEvents)) as PlayerGameView[]
+            assert.ok(
+                currentViews.every(
+                    (view) =>
+                        view.mode === "bluff" &&
+                        view.currentRound.phase === "players_answer" &&
+                        view.currentRound.requiredAnswerCount === testPlayers.length
+                )
+            )
+
+            const expectedScores = new Map(testPlayers.map((player) => [player.id, 0]))
+            for (let roundIndex = 0; roundIndex < currentViews[0].totalRounds; roundIndex += 1) {
+                const [persistedRound] = await getDatabase()
+                    .select({ bluffQuestionId: rounds.bluffQuestionId })
+                    .from(rounds)
+                    .where(and(eq(rounds.roomId, roomId!), eq(rounds.roundNumber, roundIndex + 1)))
+                    .limit(1)
+                assert.ok(persistedRound.bluffQuestionId)
+                const [factual] = await getDatabase()
+                    .select({
+                        correctAnswer: bluffQuestions.correctAnswer,
+                        explanation: bluffQuestions.explanation,
+                        sourceUrl: bluffQuestions.sourceUrl,
+                    })
+                    .from(bluffQuestions)
+                    .where(eq(bluffQuestions.id, persistedRound.bluffQuestionId))
+                    .limit(1)
+
+                const revealEvents = [...playerSockets.values()].map((socket) =>
+                    waitForEvent(socket, "round:reveal")
+                )
+                for (const [index, player] of testPlayers.entries()) {
+                    assert.equal(
+                        (
+                            await emitAnswer(
+                                playerSockets.get(player.id)!,
+                                `Bluff ${roundIndex + 1}-${index + 1}`
+                            )
+                        ).ok,
+                        true
+                    )
+                }
+                const revealViews = (await Promise.all(revealEvents)) as PlayerGameView[]
+                assert.ok(
+                    revealViews.every(
+                        (view) =>
+                            view.currentRound.answers.length === testPlayers.length &&
+                            view.currentRound.answers.every(
+                                (answer) =>
+                                    answer.authorId === undefined &&
+                                    answer.isCorrectAnswer === undefined &&
+                                    answer.content !== factual.correctAnswer
+                            ) &&
+                            view.currentRound.bluffExplanation === undefined &&
+                            view.currentRound.bluffSourceUrl === undefined
+                    )
+                )
+
+                const selectionEvents = [...playerSockets.values()].map((socket) =>
+                    waitForEvent(
+                        socket,
+                        "round:answer-phase",
+                        (phase) => phase.phase === "protagonist_selection"
+                    )
+                )
+                const selectionStateEvents = [...playerSockets.values()].map((socket) =>
+                    waitForEvent(socket, "game:state")
+                )
+                await Promise.all(selectionEvents)
+                const selectionViews = (await Promise.all(selectionStateEvents)) as PlayerGameView[]
+                const selectedView = selectionViews[0]
+                const optionByPlayerId = new Map(
+                    testPlayers.map((player, index) => {
+                        const answer = selectedView.currentRound.answers.find(
+                            (candidate) => candidate.content === `Bluff ${roundIndex + 1}-${index + 1}`
+                        )
+                        assert.ok(answer)
+                        return [player.id, answer.id] as const
+                    })
+                )
+                const correctOption = selectedView.currentRound.answers.find(
+                    (answer) => answer.content === factual.correctAnswer
+                )
+                assert.ok(correctOption)
+                assert.ok(selectedView.currentRound.answers.every((answer) => answer.isCorrectAnswer === undefined))
+
+                const firstViewsPromise = [...playerSockets.values()].map((socket) =>
+                    waitForEvent(socket, "game:state")
+                )
+                const firstProgressPromise = [...playerSockets.values()].map((socket) =>
+                    waitForEvent(socket, "round:vote-phase")
+                )
+                assert.equal(
+                    (await emitSelection(playerSockets.get(testPlayers[0].id)!, [correctOption.id])).ok,
+                    true
+                )
+                const firstViews = (await Promise.all(firstViewsPromise)) as PlayerGameView[]
+                const firstProgress = await Promise.all(firstProgressPromise)
+                assert.ok(firstProgress.every((progress) => progress.voteCount === 1))
+                assert.ok(
+                    firstViews.every(
+                        (view) =>
+                            view.currentRound.phase === "protagonist_selection" &&
+                            !("votes" in view.currentRound) &&
+                            view.currentRound.answers.every((answer) => answer.isCorrectAnswer === undefined) &&
+                            view.currentRound.bluffExplanation === undefined &&
+                            view.currentRound.bluffSourceUrl === undefined
+                    )
+                )
+
+                const duplicate = await emitSelection(
+                    playerSockets.get(testPlayers[0].id)!,
+                    [correctOption.id]
+                )
+                assert.equal(duplicate.ok, false)
+                if (!duplicate.ok) assert.equal(duplicate.code, "VOTE_ALREADY_SUBMITTED")
+                const ownBluffVote = await emitSelection(
+                    playerSockets.get(testPlayers[1].id)!,
+                    [optionByPlayerId.get(testPlayers[1].id)!]
+                )
+                assert.equal(ownBluffVote.ok, false)
+                if (!ownBluffVote.ok) assert.equal(ownBluffVote.code, "PROTAGONIST_CANNOT_GUESS")
+
+                const completedEvents = [...playerSockets.values()].map((socket) =>
+                    waitForEvent(socket, "round:completed")
+                )
+                assert.equal(
+                    (await emitSelection(
+                        playerSockets.get(testPlayers[1].id)!,
+                        [optionByPlayerId.get(testPlayers[0].id)!]
+                    )).ok,
+                    true
+                )
+                assert.equal(
+                    (await emitSelection(playerSockets.get(testPlayers[2].id)!, [correctOption.id])).ok,
+                    true
+                )
+                const results = (await Promise.all(completedEvents)) as PlayerGameView[]
+                assert.ok(
+                    results.every((view) => {
+                        const truth = view.currentRound.answers.find(
+                            (answer) => answer.isCorrectAnswer
+                        )
+                        return (
+                            view.currentRound.phase === "round_result" &&
+                            truth?.content === factual.correctAnswer &&
+                            truth.authorId === undefined &&
+                            truth.voteCount === 2 &&
+                            view.currentRound.bluffExplanation === factual.explanation &&
+                            view.currentRound.bluffSourceUrl === factual.sourceUrl
+                        )
+                    })
+                )
+                expectedScores.set(testPlayers[0].id, (expectedScores.get(testPlayers[0].id) ?? 0) + 3)
+                expectedScores.set(testPlayers[1].id, expectedScores.get(testPlayers[1].id) ?? 0)
+                expectedScores.set(testPlayers[2].id, (expectedScores.get(testPlayers[2].id) ?? 0) + 2)
+                assert.deepEqual(
+                    results[0].players.map(({ id, score }) => [id, score]),
+                    testPlayers.map((player) => [player.id, expectedScores.get(player.id)])
+                )
+
+                if (roundIndex < currentViews[0].totalRounds - 1) {
+                    const nextRoundEvents = [...playerSockets.values()].map((socket) =>
+                        waitForEvent(socket, "round:started")
+                    )
+                    assert.equal((await emitRoundNext(hostSocket)).ok, true)
+                    currentViews = (await Promise.all(nextRoundEvents)) as PlayerGameView[]
+                } else {
+                    const completedGames = [...playerSockets.values()].map((socket) =>
+                        waitForEvent(socket, "game:completed")
+                    )
+                    const summaries = [...playerSockets.values()].map((socket) =>
+                        waitForEvent(socket, "game:summary")
+                    )
+                    assert.deepEqual(
+                        await emitRoundNext(hostSocket),
+                        { ok: true, data: { finished: true } }
+                    )
+                    const finalViews = (await Promise.all(completedGames)) as PlayerGameView[]
+                    const finalSummaries = await Promise.all(summaries)
+                    assert.ok(finalViews.every((view) => view.status === "finished"))
+                    assert.ok(finalSummaries.every((summary) => summary.correctVotes === 6 && summary.votesCast === 9))
+
+                    const replayEvents = [...playerSockets.values()].map((socket) =>
+                        waitForEvent(socket, "game:replayed")
+                    )
+                    assert.deepEqual(
+                        await emitGameReplay(hostSocket),
+                        { ok: true, data: { replayed: true } }
+                    )
+                    const replayedRooms = await Promise.all(replayEvents)
+                    assert.ok(
+                        replayedRooms.every(
+                            (snapshot) =>
+                                snapshot.status === "waiting" &&
+                                snapshot.settings.mode === "bluff" &&
+                                snapshot.players.every((player) => player.score === 0)
+                        )
+                    )
+
+                    const restartedGames = [...playerSockets.values()].map((socket) =>
+                        waitForEvent(socket, "game:started")
+                    )
+                    assert.deepEqual(
+                        await emitRoomStart(hostSocket),
+                        { ok: true, data: { started: true } }
+                    )
+                    const restartedViews = (await Promise.all(restartedGames)) as PlayerGameView[]
+                    assert.ok(
+                        restartedViews.every(
+                            (view) =>
+                                view.mode === "bluff" &&
+                                view.currentRound.phase === "players_answer" &&
+                                view.players.every((player) => player.score === 0)
+                        )
+                    )
+                }
+            }
+
+            const storedAnswers = await getDatabase()
+                .select({ playerId: answers.playerId, isOriginalAnswer: answers.isOriginalAnswer })
+                .from(answers)
+                .innerJoin(rounds, eq(answers.roundId, rounds.id))
+                .where(eq(rounds.roomId, roomId!))
+            assert.equal(storedAnswers.length, testPlayers.length * 4)
+            assert.equal(
+                storedAnswers.filter((answer) => answer.playerId === null && answer.isOriginalAnswer).length,
+                testPlayers.length
+            )
+            assert.equal(
+                storedAnswers.filter((answer) => answer.playerId !== null && !answer.isOriginalAnswer).length,
+                testPlayers.length * testPlayers.length
+            )
+        })
+
+        it("plays all Who Among Us rounds with secret votes and optional scoring", async (testContext) => {
+            const scopedSockets = new Set<TestSocket>()
+            testContext.after(async () => {
+                for (const socket of scopedSockets) socket.disconnect()
+                await waitForRoomDisconnections()
+                await cleanTestRoom()
+            })
+
+            const testPlayers = await createTestRoom()
+            const playerSockets = new Map<string, TestSocket>()
+            for (const player of testPlayers) {
+                const socket = await connectPlayer(player)
+                scopedSockets.add(socket)
+                playerSockets.set(player.id, socket)
+            }
+            const hostSocket = playerSockets.get(testPlayers[0].id)
+            assert.ok(hostSocket)
+
+            const [roomSettings] = await getDatabase()
+                .select({ settings: rooms.settings })
+                .from(rooms)
+                .where(eq(rooms.id, roomId!))
+                .limit(1)
+            assert.equal(
+                (
+                    await emitRoomSettings(hostSocket, {
+                        ...roomSettings.settings,
+                        mode: "who_among_us",
+                        scoringEnabled: true,
+                        roundsPerPlayer: 1,
+                        enabledCategories: ["travel"],
+                    })
+                ).ok,
+                true
+            )
+
+            const startEvents = [...playerSockets.values()].map((socket) =>
+                waitForEvent(socket, "game:started")
+            )
+            assert.equal((await emitRoomStart(hostSocket)).ok, true)
+            let currentViews = (await Promise.all(startEvents)) as PlayerGameView[]
+            assert.ok(
+                currentViews.every(
+                    (view) =>
+                        view.mode === "who_among_us" &&
+                        view.currentRound.phase === "protagonist_selection" &&
+                        view.currentRound.answers.length === testPlayers.length &&
+                        view.currentRound.requiredVoteCount === testPlayers.length
+                )
+            )
+
+            for (let roundIndex = 0; roundIndex < currentViews[0].totalRounds; roundIndex += 1) {
+                const initialView = currentViews[0]
+                const answerIdByPlayerId = new Map(
+                    initialView.currentRound.answers.map((answer) => {
+                        const player = testPlayers.find(
+                            (candidate) => candidate.nickname === answer.content
+                        )
+                        assert.ok(player)
+                        return [player.id, answer.id] as const
+                    })
+                )
+                assert.equal(answerIdByPlayerId.size, testPlayers.length)
+                assert.ok(
+                    currentViews.every((view) =>
+                        view.currentRound.answers.every(
+                            (answer) => answer.authorId === undefined
+                        )
+                    )
+                )
+
+                const firstPlayer = testPlayers[0]
+                const selfVote = await emitSelection(
+                    playerSockets.get(firstPlayer.id)!,
+                    [answerIdByPlayerId.get(firstPlayer.id)!]
+                )
+                assert.equal(selfVote.ok, false)
+                if (!selfVote.ok) assert.equal(selfVote.code, "PROTAGONIST_CANNOT_GUESS")
+
+                const scoresBefore = new Map(
+                    initialView.players.map((player) => [player.id, player.score])
+                )
+                for (let voterIndex = 0; voterIndex < testPlayers.length; voterIndex += 1) {
+                    const voter = testPlayers[voterIndex]
+                    const target = testPlayers[(voterIndex + 1) % testPlayers.length]
+                    const targetAnswerId = answerIdByPlayerId.get(target.id)
+                    assert.ok(targetAnswerId)
+
+                    if (voterIndex < testPlayers.length - 1) {
+                        const stateEvents = [...playerSockets.values()].map((socket) =>
+                            waitForEvent(socket, "game:state")
+                        )
+                        const progressEvents = [...playerSockets.values()].map((socket) =>
+                            waitForEvent(socket, "round:vote-phase")
+                        )
+                        const voteResult = await emitSelection(
+                            playerSockets.get(voter.id)!,
+                            [targetAnswerId]
+                        )
+                        assert.equal(voteResult.ok, true)
+                        const views = (await Promise.all(stateEvents)) as PlayerGameView[]
+                        const progress = await Promise.all(progressEvents)
+                        assert.ok(progress.every((item) => item.requiredVoteCount === testPlayers.length))
+                        assert.ok(
+                            views.every(
+                                (view) =>
+                                    view.currentRound.phase === "protagonist_selection" &&
+                                    !("votes" in view.currentRound) &&
+                                    view.currentRound.answers.every(
+                                        (answer) => answer.voteCount === undefined
+                                    )
+                            )
+                        )
+                        assert.equal(views[voterIndex].currentRound.hasSubmittedVote, true)
+                    } else {
+                        const resultEvents = [...playerSockets.values()].map((socket) =>
+                            waitForEvent(socket, "round:completed")
+                        )
+                        const voteResult = await emitSelection(
+                            playerSockets.get(voter.id)!,
+                            [targetAnswerId]
+                        )
+                        assert.equal(voteResult.ok, true)
+                        const results = (await Promise.all(resultEvents)) as PlayerGameView[]
+                        assert.ok(
+                            results.every(
+                                (view) =>
+                                    view.currentRound.phase === "round_result" &&
+                                    view.currentRound.selectedAnswerIds.length === testPlayers.length &&
+                                    view.currentRound.answers.every(
+                                        (answer) => answer.authorId !== undefined
+                                    )
+                            )
+                        )
+                        assert.deepEqual(
+                            results[0].players.map(({ id, score }) => [id, score]),
+                            testPlayers.map((player) => [
+                                player.id,
+                                (scoresBefore.get(player.id) ?? 0) + 3,
+                            ])
+                        )
+                    }
+                }
+
+                if (roundIndex < initialView.totalRounds - 1) {
+                    const nextRoundEvents = [...playerSockets.values()].map((socket) =>
+                        waitForEvent(socket, "round:started")
+                    )
+                    assert.equal((await emitRoundNext(hostSocket)).ok, true)
+                    currentViews = (await Promise.all(nextRoundEvents)) as PlayerGameView[]
+                } else {
+                    const completionEvents = [...playerSockets.values()].map((socket) =>
+                        waitForEvent(socket, "game:completed")
+                    )
+                    const summaries = [...playerSockets.values()].map((socket) =>
+                        waitForEvent(socket, "game:summary")
+                    )
+                    assert.deepEqual(
+                        await emitRoundNext(hostSocket),
+                        { ok: true, data: { finished: true } }
+                    )
+                    const finishedViews = (await Promise.all(completionEvents)) as PlayerGameView[]
+                    const finalSummaries = await Promise.all(summaries)
+                    assert.ok(finishedViews.every((view) => view.status === "finished"))
+                    assert.ok(
+                        finalSummaries.every(
+                            (summary) =>
+                                summary.roundsPlayed === testPlayers.length &&
+                                summary.answersSubmitted === 0 &&
+                                summary.votesCast === testPlayers.length * testPlayers.length &&
+                                summary.winningVotes === testPlayers.length * testPlayers.length
+                        )
+                    )
+                    const persistedCandidates = await getDatabase()
+                        .select({ playerId: answers.playerId, isOriginalAnswer: answers.isOriginalAnswer })
+                        .from(answers)
+                        .innerJoin(rounds, eq(answers.roundId, rounds.id))
+                        .where(eq(rounds.roomId, roomId!))
+                    const persistedVotes = await getDatabase()
+                        .select({ id: votes.id })
+                        .from(votes)
+                        .innerJoin(rounds, eq(votes.roundId, rounds.id))
+                        .where(eq(rounds.roomId, roomId!))
+                    assert.equal(persistedCandidates.length, testPlayers.length * testPlayers.length)
+                    assert.ok(
+                        persistedCandidates.every(
+                            (answer) => answer.playerId !== null && !answer.isOriginalAnswer
+                        )
+                    )
+                    assert.equal(persistedVotes.length, testPlayers.length * testPlayers.length)
+
+                    const replayEvents = [...playerSockets.values()].map((socket) =>
+                        waitForEvent(socket, "game:replayed")
+                    )
+                    assert.equal((await emitGameReplay(hostSocket)).ok, true)
+                    const replayed = await Promise.all(replayEvents)
+                    assert.ok(
+                        replayed.every(
+                            (snapshot) =>
+                                snapshot.settings.mode === "who_among_us" &&
+                                snapshot.players.every((player) => player.score === 0)
+                        )
+                    )
+                    const disableScoring = await emitRoomSettings(hostSocket, {
+                        ...roomSettings.settings,
+                        mode: "who_among_us",
+                        scoringEnabled: false,
+                        roundsPerPlayer: 1,
+                        enabledCategories: ["travel"],
+                    })
+                    assert.equal(disableScoring.ok, true)
+                    const restartedEvents = [...playerSockets.values()].map((socket) =>
+                        waitForEvent(socket, "game:started")
+                    )
+                    assert.equal((await emitRoomStart(hostSocket)).ok, true)
+                    const restarted = (await Promise.all(restartedEvents)) as PlayerGameView[]
+                    assert.ok(
+                        restarted.every(
+                            (view) =>
+                                view.mode === "who_among_us" &&
+                                view.currentRound.phase === "protagonist_selection" &&
+                                view.players.every((player) => player.score === 0)
+                        )
+                    )
+                    const restartedCandidates = new Map(
+                        restarted[0].currentRound.answers.map((answer) => [
+                            answer.content,
+                            answer.id,
+                        ])
+                    )
+                    const noScoreResultEvents = [...playerSockets.values()].map((socket) =>
+                        waitForEvent(socket, "round:completed")
+                    )
+                    for (let voterIndex = 0; voterIndex < testPlayers.length; voterIndex += 1) {
+                        const voter = testPlayers[voterIndex]
+                        const target = testPlayers[(voterIndex + 1) % testPlayers.length]
+                        const targetAnswerId = restartedCandidates.get(target.nickname)
+                        assert.ok(targetAnswerId)
+                        assert.equal(
+                            (await emitSelection(playerSockets.get(voter.id)!, [targetAnswerId])).ok,
+                            true
+                        )
+                    }
+                    const noScoreResults = (await Promise.all(noScoreResultEvents)) as PlayerGameView[]
+                    assert.ok(
+                        noScoreResults.every(
+                            (view) =>
+                                view.currentRound.phase === "round_result" &&
+                                view.players.every((player) => player.score === 0)
+                        )
+                    )
+                }
+            }
+
+            const disableScoring = await emitRoomSettings(hostSocket, {
+                ...roomSettings.settings,
+                mode: "who_among_us",
+                scoringEnabled: false,
+                roundsPerPlayer: 1,
+                enabledCategories: ["travel"],
+            })
+            assert.equal(disableScoring.ok, false)
+            if (!disableScoring.ok) assert.equal(disableScoring.code, "ROOM_UNAVAILABLE")
+        })
+
         it("plays an anonymous absurd-situations vote and resolves a three-way tie", async (testContext) => {
             const scopedSockets = new Set<TestSocket>()
             testContext.after(async () => {
@@ -553,6 +1092,131 @@ describe(
                 .limit(1)
             assert.equal(persistedRound.questionId, null)
             assert.ok(persistedRound.gamePromptId)
+        })
+
+        it("plays an absurd-situations round with four connected players", async (testContext) => {
+            const scopedSockets = new Set<TestSocket>()
+            testContext.after(async () => {
+                for (const socket of scopedSockets) socket.disconnect()
+                await waitForRoomDisconnections()
+                await cleanTestRoom()
+            })
+
+            const initialPlayers = await createTestRoom()
+            const guestCSessionTokenHash = hashPlayerSessionToken(
+                randomBytes(32).toString("base64url")
+            )
+            const guestC = await joinRoom(
+                { code: roomCode!, nickname: "IntegrationGuestC", avatar: "leaf" },
+                guestCSessionTokenHash
+            )
+            const testPlayers = [
+                ...initialPlayers,
+                {
+                    id: guestC.playerId,
+                    nickname: "IntegrationGuestC",
+                    sessionTokenHash: guestCSessionTokenHash,
+                },
+            ]
+            const playerSockets = new Map<string, TestSocket>()
+            for (const player of testPlayers) {
+                const socket = await connectPlayer(player)
+                scopedSockets.add(socket)
+                playerSockets.set(player.id, socket)
+            }
+            const hostSocket = playerSockets.get(testPlayers[0].id)
+            assert.ok(hostSocket)
+
+            const [roomSettings] = await getDatabase()
+                .select({ settings: rooms.settings })
+                .from(rooms)
+                .where(eq(rooms.id, roomId!))
+                .limit(1)
+            const settingsResult = await emitRoomSettings(hostSocket, {
+                ...roomSettings.settings,
+                mode: "absurd_situations",
+                enabledCategories: ["friendship"],
+            })
+            assert.equal(settingsResult.ok, true)
+
+            const startEvents = [...playerSockets.values()].map((socket) =>
+                waitForEvent(socket, "game:started")
+            )
+            assert.equal((await emitRoomStart(hostSocket)).ok, true)
+            const startedViews = (await Promise.all(startEvents)) as PlayerGameView[]
+            assert.ok(
+                startedViews.every(
+                    (view) =>
+                        view.players.length === 4 &&
+                        view.currentRound.requiredAnswerCount === 4
+                )
+            )
+
+            const revealEvents = [...playerSockets.values()].map((socket) =>
+                waitForEvent(socket, "round:reveal")
+            )
+            for (const [index, player] of testPlayers.entries()) {
+                assert.equal(
+                    (
+                        await emitAnswer(
+                            playerSockets.get(player.id)!,
+                            `Quattro giocatori risposta ${index + 1}`
+                        )
+                    ).ok,
+                    true
+                )
+            }
+            const [revealedView] = (await Promise.all(revealEvents)) as PlayerGameView[]
+            assert.equal(revealedView.currentRound.answers.length, 4)
+
+            const selectionEvents = [...playerSockets.values()].map((socket) =>
+                waitForEvent(
+                    socket,
+                    "round:answer-phase",
+                    (phase) => phase.phase === "protagonist_selection"
+                )
+            )
+            await Promise.all(selectionEvents)
+            const answerIdByPlayerId = new Map(
+                revealedView.currentRound.answers.map((answer) => {
+                    const playerIndex = testPlayers.findIndex(
+                        (_player, index) =>
+                            answer.content === `Quattro giocatori risposta ${index + 1}`
+                    )
+                    assert.ok(playerIndex >= 0)
+                    return [testPlayers[playerIndex].id, answer.id] as const
+                })
+            )
+            const completedEvents = [...playerSockets.values()].map((socket) =>
+                waitForEvent(socket, "round:completed")
+            )
+            for (let voterIndex = 0; voterIndex < testPlayers.length; voterIndex += 1) {
+                const voter = testPlayers[voterIndex]
+                const target = testPlayers[(voterIndex + 1) % testPlayers.length]
+                const answerId = answerIdByPlayerId.get(target.id)
+                assert.ok(answerId)
+                assert.notEqual(voter.id, target.id)
+                assert.equal(
+                    (await emitSelection(playerSockets.get(voter.id)!, [answerId])).ok,
+                    true
+                )
+            }
+
+            const results = (await Promise.all(completedEvents)) as PlayerGameView[]
+            assert.ok(
+                results.every(
+                    (view) =>
+                        view.currentRound.phase === "round_result" &&
+                        view.currentRound.selectedAnswerIds.length === 4 &&
+                        view.players.every((player) => player.score === 4)
+                )
+            )
+            const persistedVotes = await getDatabase()
+                .select({ id: votes.id })
+                .from(votes)
+                .innerJoin(rounds, eq(votes.roundId, rounds.id))
+                .where(eq(rounds.roomId, roomId!))
+            assert.equal(persistedVotes.length, 4)
         })
 
         it("plays a complete game, preserves answer privacy, and restores a reconnecting player", async () => {

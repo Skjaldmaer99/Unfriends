@@ -1,7 +1,11 @@
+import { randomUUID } from "node:crypto"
+
 import {
     GameQuestionSchema,
     GameSettingsSchema,
+    BluffQuestionSchema,
     type GameAnswer,
+    type BluffQuestion,
     type GamePlayer,
     type GamePlayerInput,
     type GameQuestion,
@@ -15,6 +19,11 @@ import {
     getEligibleVoterCount,
     resolveAbsurdVotes,
 } from "./modes/absurd-situations.js"
+import { prepareBluffOptions, resolveBluffVotes } from "./modes/bluff.js"
+import {
+    createWhoAmongUsCandidates,
+    resolveWhoAmongUsVotes,
+} from "./modes/who-among-us.js"
 
 export type GameRuleErrorCode =
     | "INVALID_PLAYER_COUNT"
@@ -49,6 +58,7 @@ export class GameRuleError extends Error {
 export interface CreateGameInput {
     players: readonly GamePlayerInput[]
     questions: readonly GameQuestion[]
+    bluffQuestions?: readonly BluffQuestion[]
     settings?: GameSettingsInput
     now?: number
     random?: () => number
@@ -87,7 +97,19 @@ export function createGame(input: CreateGameInput): GameState {
         return { ...player, id, nickname, score: 0 }
     })
 
-    const questionBank = GameQuestionSchema.array().parse(input.questions)
+    const settings = GameSettingsSchema.parse(input.settings ?? {})
+    const bluffQuestionBank = BluffQuestionSchema.array().parse(
+        input.bluffQuestions ?? []
+    )
+    const questionBank =
+        settings.mode === "bluff"
+            ? bluffQuestionBank.map(({ id, text, category, difficulty }) => ({
+                id,
+                text,
+                category,
+                difficulty,
+            }))
+            : GameQuestionSchema.array().parse(input.questions)
     const questionIds = new Set<string>()
     for (const question of questionBank) {
         if (questionIds.has(question.id)) {
@@ -99,33 +121,53 @@ export function createGame(input: CreateGameInput): GameState {
         questionIds.add(question.id)
     }
 
-    const settings = GameSettingsSchema.parse(input.settings ?? {})
     const question = chooseQuestion(
         questionBank,
         settings,
         [],
         input.random ?? Math.random
     )
-
+    const selectedBluffQuestion =
+        settings.mode === "bluff"
+            ? bluffQuestionBank.find((candidate) => candidate.id === question.id)
+            : undefined
+    const roundId = "round-1"
+    const whoCandidates =
+        settings.mode === "who_among_us"
+            ? createWhoAmongUsCandidates(players, now)
+            : []
     return {
         status: "in_progress",
         players,
         settings,
         questionBank,
+        bluffQuestionBank,
         usedQuestionIds: [question.id],
         totalRounds: players.length * settings.roundsPerPlayer,
         currentRound: {
-            id: "round-1",
+            id: roundId,
             number: 1,
             protagonistId: players[0].id,
             question,
             phase:
-                settings.mode === "absurd_situations"
-                    ? "players_answer"
-                    : "protagonist_answer",
-            deadlineAt: now + settings.answerTimeLimitSeconds * 1000,
+                settings.mode === "who_among_us"
+                    ? "protagonist_selection"
+                    : settings.mode === "absurd_situations" || settings.mode === "bluff"
+                        ? "players_answer"
+                        : "protagonist_answer",
+            deadlineAt:
+                now +
+                (settings.mode === "who_among_us"
+                    ? settings.selectionTimeLimitSeconds
+                    : settings.answerTimeLimitSeconds) * 1000,
             originalAnswer: null,
-            answers: [],
+            bluffCorrectAnswer: selectedBluffQuestion?.correctAnswer ?? null,
+            bluffExplanation: selectedBluffQuestion?.explanation ?? null,
+            bluffSourceUrl: selectedBluffQuestion?.sourceUrl ?? null,
+            bluffCorrectAnswerId: selectedBluffQuestion ? randomUUID() : null,
+            bluffVoteCounts: [],
+            whoVoteCounts: [],
+            answers: whoCandidates,
             votes: [],
             selectedAnswerIds: [],
         },
@@ -213,7 +255,7 @@ export function submitPlayerAnswer(
     }
     const answers = [...state.currentRound.answers, answer]
     const requiredAnswerCount =
-        state.settings.mode === "absurd_situations"
+        state.settings.mode === "absurd_situations" || state.settings.mode === "bluff"
             ? state.players.length
             : state.players.length - 1
     const allPlayersAnswered = answers.length === requiredAnswerCount
@@ -240,10 +282,15 @@ export function beginSelection(state: GameState, now = Date.now()): GameState {
         )
     }
 
+    const preparedState =
+        state.settings.mode === "bluff"
+            ? prepareBluffOptions(state, now, Math.random)
+            : state
+
     return {
-        ...state,
+        ...preparedState,
         currentRound: {
-            ...state.currentRound,
+            ...preparedState.currentRound,
             phase: "protagonist_selection",
             deadlineAt: now + state.settings.selectionTimeLimitSeconds * 1000,
         },
@@ -283,6 +330,17 @@ export function expireCurrentPhase(
     }
 
     if (
+        state.settings.mode === "bluff" &&
+        round.phase === "players_answer" &&
+        round.answers.length === 0
+    ) {
+        return {
+            ...state,
+            currentRound: { ...round, phase: "reveal", deadlineAt: null },
+        }
+    }
+
+    if (
         state.settings.mode === "absurd_situations" &&
         round.phase === "players_answer" &&
         round.answers.length === 0
@@ -291,6 +349,20 @@ export function expireCurrentPhase(
             ...state,
             currentRound: { ...round, phase: "round_result", deadlineAt: null },
         }
+    }
+
+    if (
+        state.settings.mode === "bluff" &&
+        round.phase === "protagonist_selection"
+    ) {
+        return resolveBluffVotes(state, round.votes)
+    }
+
+    if (
+        state.settings.mode === "who_among_us" &&
+        round.phase === "protagonist_selection"
+    ) {
+        return resolveWhoAmongUsVotes(state, round.votes)
     }
 
     if (
@@ -352,7 +424,11 @@ export function selectWinningAnswer(
 
     assertBeforeDeadline(state, now)
 
-    if (state.settings.mode === "absurd_situations") {
+    if (
+        state.settings.mode === "absurd_situations" ||
+        state.settings.mode === "bluff" ||
+        state.settings.mode === "who_among_us"
+    ) {
         if (answerIds.length !== 1) {
             throw new GameRuleError(
                 "INVALID_ANSWER",
@@ -372,22 +448,38 @@ export function selectWinningAnswer(
         if (!answer) {
             throw new GameRuleError("ANSWER_NOT_FOUND", "The selected answer is invalid.")
         }
-        if (answer.playerId === playerId) {
+        if (
+            (state.settings.mode === "absurd_situations" ||
+                state.settings.mode === "bluff" ||
+                state.settings.mode === "who_among_us") &&
+            answer.playerId === playerId
+        ) {
             throw new GameRuleError(
                 "PROTAGONIST_CANNOT_GUESS",
                 "A player cannot vote for their own answer."
             )
         }
+        if (state.settings.mode === "bluff" && answer.playerId === playerId) {
+            throw new GameRuleError(
+                "PROTAGONIST_CANNOT_GUESS",
+                "A player cannot vote for their own bluff."
+            )
+        }
 
         const votes = [...state.currentRound.votes, { playerId, answerId }]
-        if (
-            votes.length <
-            getEligibleVoterCount(state.players, state.currentRound.answers)
-        ) {
+        const requiredVoteCount =
+            state.settings.mode === "bluff" || state.settings.mode === "who_among_us"
+                ? state.players.length
+                : getEligibleVoterCount(state.players, state.currentRound.answers)
+        if (votes.length < requiredVoteCount) {
             return {
                 ...state,
                 currentRound: { ...state.currentRound, votes },
             }
+        }
+        if (state.settings.mode === "bluff") return resolveBluffVotes(state, votes)
+        if (state.settings.mode === "who_among_us") {
+            return resolveWhoAmongUsVotes(state, votes)
         }
         return resolveAbsurdVotes(state, votes)
     }
@@ -485,25 +577,58 @@ export function advanceRound(
     assertTimestamp(now)
     const nextNumber = state.currentRound.number + 1
     const question = chooseQuestion(
-        state.questionBank,
+        state.settings.mode === "bluff"
+            ? state.bluffQuestionBank.map(({ id, text, category, difficulty }) => ({
+                id,
+                text,
+                category,
+                difficulty,
+            }))
+            : state.questionBank,
         state.settings,
         state.usedQuestionIds,
         random
     )
+    const selectedBluffQuestion =
+        state.settings.mode === "bluff"
+            ? state.bluffQuestionBank.find((candidate) => candidate.id === question.id)
+            : undefined
     const protagonist = state.players[(nextNumber - 1) % state.players.length]
+    const roundId = `round-${nextNumber}`
+    const whoCandidates =
+        state.settings.mode === "who_among_us"
+            ? createWhoAmongUsCandidates(state.players, now)
+            : []
 
     return {
         ...state,
         usedQuestionIds: [...state.usedQuestionIds, question.id],
         currentRound: {
-            id: `round-${nextNumber}`,
+            id: roundId,
             number: nextNumber,
             protagonistId: protagonist.id,
             question,
-            phase: "protagonist_answer",
-            deadlineAt: now + state.settings.answerTimeLimitSeconds * 1000,
+            phase:
+                state.settings.mode === "who_among_us"
+                    ? "protagonist_selection"
+                    : state.settings.mode === "absurd_situations" || state.settings.mode === "bluff"
+                        ? "players_answer"
+                        : "protagonist_answer",
+            deadlineAt:
+                now +
+                (state.settings.mode === "who_among_us"
+                    ? state.settings.selectionTimeLimitSeconds
+                    : state.settings.answerTimeLimitSeconds) * 1000,
             originalAnswer: null,
-            answers: [],
+            bluffCorrectAnswer: selectedBluffQuestion?.correctAnswer ?? null,
+            bluffExplanation: selectedBluffQuestion?.explanation ?? null,
+            bluffSourceUrl: selectedBluffQuestion?.sourceUrl ?? null,
+            bluffCorrectAnswerId: selectedBluffQuestion
+                ? randomUUID()
+                : null,
+            bluffVoteCounts: [],
+            whoVoteCounts: [],
+            answers: whoCandidates,
             votes: [],
             selectedAnswerIds: [],
         },
@@ -523,6 +648,8 @@ export function getPlayerGameView(
         round.phase === "protagonist_selection" ||
         resultIsVisible
     const authorsAreVisible = resultIsVisible
+    const voteCounts = new Map(round.bluffVoteCounts.map((entry) => [entry.answerId, entry.voteCount]))
+    const whoVoteCounts = new Map(round.whoVoteCounts.map((entry) => [entry.answerId, entry.voteCount]))
     const canSeeOriginal =
         resultIsVisible ||
         (viewer.id === round.protagonistId && round.originalAnswer !== null)
@@ -540,8 +667,26 @@ export function getPlayerGameView(
             return {
                 id: answer.id,
                 content: answer.content,
-                authorId: answer.playerId,
-                authorNickname: playerById.get(answer.playerId)?.nickname,
+                ...(answer.playerId
+                    ? {
+                        authorId: answer.playerId,
+                        authorNickname: playerById.get(answer.playerId)?.nickname,
+                    }
+                    : {}),
+                ...(resultIsVisible && answer.isCorrectAnswer
+                    ? { isCorrectAnswer: true }
+                    : {}),
+                ...(resultIsVisible &&
+                    state.settings.mode === "who_among_us" &&
+                    round.selectedAnswerIds.includes(answer.id)
+                    ? { isCorrectAnswer: true }
+                    : {}),
+                ...(resultIsVisible && state.settings.mode === "bluff"
+                    ? { voteCount: voteCounts.get(answer.id) ?? 0 }
+                    : {}),
+                ...(resultIsVisible && state.settings.mode === "who_among_us"
+                    ? { voteCount: whoVoteCounts.get(answer.id) ?? 0 }
+                    : {}),
             }
         })
         : []
@@ -564,23 +709,36 @@ export function getPlayerGameView(
             deadlineAt: round.deadlineAt,
             answerCount: round.answers.length,
             requiredAnswerCount:
-                state.settings.mode === "absurd_situations"
-                    ? state.players.length
-                    : state.players.length - 1,
+                state.settings.mode === "who_among_us"
+                    ? 0
+                    : state.settings.mode === "absurd_situations" || state.settings.mode === "bluff"
+                        ? state.players.length
+                        : state.players.length - 1,
             voteCount: round.votes.length,
             requiredVoteCount:
                 state.settings.mode === "absurd_situations"
                     ? getEligibleVoterCount(state.players, round.answers)
-                    : 0,
+                    : state.settings.mode === "bluff" || state.settings.mode === "who_among_us"
+                        ? state.players.length
+                        : 0,
             hasSubmittedAnswer:
-                state.settings.mode === "absurd_situations"
-                    ? round.answers.some((answer) => answer.playerId === viewer.id)
-                    : viewer.id === round.protagonistId
-                        ? round.originalAnswer !== null
-                        : round.answers.some((answer) => answer.playerId === viewer.id),
+                state.settings.mode === "who_among_us"
+                    ? false
+                    : state.settings.mode === "absurd_situations" ||
+                        state.settings.mode === "bluff"
+                        ? round.answers.some((answer) => answer.playerId === viewer.id)
+                        : viewer.id === round.protagonistId
+                            ? round.originalAnswer !== null
+                            : round.answers.some((answer) => answer.playerId === viewer.id),
             hasSubmittedVote: round.votes.some((vote) => vote.playerId === viewer.id),
             ...(canSeeOriginal && round.originalAnswer !== null
                 ? { originalAnswer: round.originalAnswer }
+                : {}),
+            ...(resultIsVisible && round.bluffExplanation
+                ? { bluffExplanation: round.bluffExplanation }
+                : {}),
+            ...(resultIsVisible && round.bluffSourceUrl
+                ? { bluffSourceUrl: round.bluffSourceUrl }
                 : {}),
             answers,
             selectedAnswerIds: round.selectedAnswerIds,

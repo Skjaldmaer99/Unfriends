@@ -508,7 +508,7 @@ Mantieni il sistema di punteggio configurabile e centralizzato.
 
 ---
 
-## Sottotask 4.4 – Modalità IL BLUFF [ ]
+## Sottotask 4.4 – Modalità IL BLUFF [x]
 
 ### Descrizione
 
@@ -568,7 +568,7 @@ Non utilizzare risposte inventate dal modello senza verificarne l'attendibilità
 
 ---
 
-## Sottotask 4.5 – Modalità CHI TRA NOI? [ ]
+## Sottotask 4.5 – Modalità CHI TRA NOI? [x]
 
 ### Descrizione
 
@@ -766,8 +766,11 @@ Non mostrare impostazioni che non hanno effetto sulla modalità selezionata.
 - Il registry condiviso in `realtime-server/src/game/game-modes.ts` definisce metadati, intervallo giocatori/round, fasi, azioni, regole, condizione di conclusione e scoring. Le regole di voto e risoluzione di Situazioni Assurde sono isolate in `realtime-server/src/game/modes/absurd-situations.ts`; il motore mantiene il ciclo di vita comune.
 - Classica resta invariata nel comportamento e nello scoring. Situazioni Assurde è giocabile: tutti rispondono, le risposte e i voti restano anonimi durante la fase, ciascuno vota una risposta altrui una sola volta, i pareggi condividono i punti e chi vota una risposta vincente riceve il bonus configurato. La scadenza chiude la votazione anche con voti parziali.
 - La lobby mostra card con icone, descrizioni e limiti giocatori. Solo l'host può cambiare modalità; l'aggiornamento arriva a tutti via `room:updated`. Il server valida la disponibilità e il numero di giocatori anche all'avvio. Round e timer restano configurabili e si applicano anche a Situazioni Assurde.
-- Bluff, Chi tra noi?, Personaggio segreto, Caos Mode e le opzioni non ancora operative restano disabilitati/non esposti come impostazioni selezionabili.
-- Verifica: `npm test` (13 test room/HTTP e 32 realtime, inclusi E2E PostgreSQL per voto segreto, auto-voto e voto duplicato respinti, pareggio a tre, punteggi, persistenza prompt e broadcast lobby), typecheck app/server, lint senza warning e build production Next passano. Migrazioni 0003/0004 applicate e prompt Assurde seedati.
+- Bluff è selezionabile e giocabile: tutti scrivono un bluff, il server aggiunge l'opzione corretta con ID opaco e ordine casuale, voti singoli e segreti, punti per risposta vera e fake convincenti, risultato con conteggi e fonte verificata, timeout, replay e nuova partita.
+- Chi tra noi? è selezionabile e giocabile: ogni partecipante è un candidato, i voti sono singoli e segreti, non si può votare sé stessi, tutti i candidati a pari merito sono riconosciuti, i risultati mostrano distribuzione e punteggio opzionale. Sono coperti timeout, persistenza, replay e nuova partita.
+- Personaggio segreto e Caos Mode restano da implementare e non selezionabili.
+- Verifica Bluff: test dominio per privacy, auto-voto, voto duplicato, scoring e timeout; E2E PostgreSQL/Socket.IO su tre round, summary, replay e nuovo start. Typecheck app/server, ESLint e build passano. Migrazione `0006_lucky_barracuda.sql` applicata e seed factual già disponibile.
+- Verifica Chi tra noi?: test dominio per voto segreto, auto-voto, duplicati, pareggi e scoring opzionale; E2E PostgreSQL/Socket.IO su tutti i round, privacy durante il voto, persistenza dei voti, summary, replay e nuovo start. Migrazione `0007_conscious_morlocks.sql` applicata.
 
 # TASK 6 – SISTEMA CONDIVISO DI PUNTEGGIO E CLASSIFICA
 
@@ -872,10 +875,10 @@ Organizza i contenuti in modo da poter aggiungere successivamente nuove domande,
 
 - I punti sono configurati per modalità nel registry e applicati dal motore server-authoritative. La persistenza dei risultati usa una transazione condivisa per voti conclusivi, score giocatori, round e snapshot; il broadcast score avviene a ogni round concluso. Il ranking assegna lo stesso piazzamento a chi ha pari punteggio.
 - Il riepilogo finale mantiene le statistiche Classic e mostra in Situazioni Assurde i voti alle risposte vincitrici; segnala tutti i campioni a pari score. La nuova partita riusa stanza e roster e permette all'host di cambiare modalità/impostazioni dalla lobby.
-- Il catalogo distingue `questions` Classiche e `game_prompts` indicizzati per modalità/categoria. Sono presenti seed per Situazioni Assurde e Chi tra noi, una tabella Bluff con risposta, spiegazione e fonte HTTPS (NASA), e tabelle collegate per scenari/personaggi segreti.
+- Il catalogo distingue `questions` Classiche, `game_prompts` indicizzati per modalità/categoria e `bluff_questions` con risposta, spiegazione e fonte HTTPS (NASA); restano anche tabelle collegate per scenari/personaggi segreti.
 - Le categorie includono amicizia, personalità, preferenze, abitudini, ricordi, ipotetiche, relazioni, divertimento, assurde, quotidianità, viaggi, cultura generale, imbarazzanti, fantasia e situazioni impossibili. Il registry restringe i filtri alla modalità; il server normalizza anche impostazioni legacy, evitando cataloghi vuoti al cambio modalità.
-- Migrazione `0005_clear_callisto.sql` applicata. Il seed è stato eseguito due volte; i vincoli unici e gli upsert mantengono il catalogo idempotente. Bluff e Personaggio segreto hanno contenuti strutturati ma restano modalità non selezionabili finché non sarà implementato il loro gameplay.
-- Verifica finale: `npm test` passa con 13 test room/HTTP e 35 realtime; typecheck app/server, ESLint, build production Next e `git diff --check` passano.
+- Migrazioni `0005_clear_callisto.sql` e `0006_lucky_barracuda.sql` applicate. Il seed è idempotente. Bluff è attiva; Personaggio segreto ha contenuti strutturati ma resta non selezionabile fino al completamento del gameplay.
+- Verifica finale dopo audit sicurezza: `npm test` passa con 15 test room/HTTP e 37 realtime; typecheck app/server, ESLint, build production Next e `git diff --check` passano.
 
 ---
 
@@ -904,7 +907,7 @@ Individua gli elementi che possono essere riutilizzati:
 - Messaggi di attesa.
 - Indicatori di connessione.
 
-### Sottotask 8.3 – Responsive [ ]
+### Sottotask 8.3 – Responsive [x]
 
 Verifica che tutte le nuove schermate funzionino correttamente:
 
@@ -972,9 +975,12 @@ Gli eventi realtime devono essere coerenti e non devono permettere:
 
 - Il flusso partita riusa card, timer, avatar, score badge, attese e risultati esistenti. Il roster mostra un indicatore con stato accessibile per i giocatori disconnessi; connessione e progresso voti sono annunciati con `role=status`/`aria-live`. Errori azione e risposta/attesa hanno feedback visibile.
 - Risposte e voti delle modalità attive restano privati fino alla fase prevista; i test verificano risposte anonime, `originalAnswer` non esposta ai guest, assenza del campo `votes` nelle viste, auto-voto e voto duplicato respinti. Gli eventi rifiutano identità client-controlled, i permessi host/round sono verificati e le impostazioni non possono cambiare dopo lo start.
-- Il browser smoke test desktop e 390px mobile non ha rilevato overflow orizzontale. La verifica tablet dedicata resta aperta; la stanza usata per l'ispezione è stata rimossa dal teardown dei test e il server realtime locale non era raggiungibile.
+- Le POST che creano, fanno entrare o fanno uscire da una stanza richiedono un header `Origin` esatto same-origin; create/join richiedono anche `Content-Type: application/json`. Questo protegge le route con cookie sessione da richieste CSRF cross-origin, inclusi sottodomini same-site. I test coprono Origin valido, estraneo, mancante/opaque e media type non JSON.
+- Il server Socket.IO rifiuta l'handshake senza un Origin allowlisted e verifica un ticket JWT firmato, breve e legato alla membership nel DB. Un test copre l'Origin non autorizzato; uno smoke browser same-origin conferma che create/leave legittimi continuano a funzionare.
+- Il browser smoke test sulla lobby non ha rilevato overflow orizzontale a 390px, 768px e 1280px; anche la schermata partita è stata controllata a 390px.
 - Bluff e Personaggio segreto rimangono non selezionabili e i loro dati non sono esposti da eventi/API finché le relative regole di gioco non saranno implementate.
-- Verifica: suite completa con 13 test room/HTTP e 35 realtime, typecheck app/server, lint e build production passano. Il test realtime include un tentativo host di modificare settings dopo l'avvio, respinto con `ROOM_UNAVAILABLE`.
+- Verifica: suite completa con 15 test room/HTTP e 37 realtime, typecheck app/server, lint e build production passano. I test includono un tentativo host di modificare settings dopo l'avvio, respinto con `ROOM_UNAVAILABLE`.
+- Limite operativo: i rate limiter e la coda eventi realtime sono in memoria e non coordinati tra istanze; mantenere una sola istanza Render. Per scalare servono rate limit distribuiti e coordinamento/adapter Socket.IO con locking transazionale. Il deploy online e configurazione provider non sono stati verificati in questa sessione.
 
 ---
 
@@ -982,55 +988,61 @@ Gli eventi realtime devono essere coerenti e non devono permettere:
 
 Prima di considerare concluso il lavoro, verifica il funzionamento dell'intera applicazione.
 
-### Sottotask 10.1 – Test delle modalità
+### Sottotask 10.1 – Test delle modalità [parziale]
 
-Testa:
+Test completati sulle modalità attive:
 
-- Modalità classica.
-- Situazioni assurde.
-- Il bluff.
-- Chi tra noi?
-- Il personaggio segreto.
-- Caos Mode attivo e disattivo.
+- [x] Modalità classica.
+- [x] Situazioni assurde.
+- [ ] Il bluff: gameplay non implementato.
+- [ ] Chi tra noi?: gameplay non implementato.
+- [ ] Il personaggio segreto: gameplay non implementato.
+- [ ] Caos Mode attivo e disattivo: effetti non implementati.
 
-### Sottotask 10.2 – Test multiplayer
+### Sottotask 10.2 – Test multiplayer [x]
 
 Verifica il comportamento con:
 
-- 3 giocatori.
-- 4 giocatori.
-- Più giocatori collegati contemporaneamente.
-- Host che si disconnette.
-- Giocatore che si disconnette.
-- Riconnessione durante un round.
-- Riconnessione dopo la conclusione di una partita.
+- [x] 3 giocatori.
+- [x] 4 giocatori collegati nello stesso round.
+- [x] Più giocatori collegati contemporaneamente.
+- [x] Host che si disconnette e si riconnette.
+- [x] Giocatore che si disconnette.
+- [x] Riconnessione durante un round.
+- [x] Riconnessione dopo la conclusione di una partita.
 
-### Sottotask 10.3 – Test delle nuove funzionalità
+### Sottotask 10.3 – Test delle nuove funzionalità [x]
 
 Verifica:
 
-- Selezione di una risposta vincente.
-- Selezione di più risposte vincenti.
-- Deselezione di una risposta.
-- Impossibilità per gli altri giocatori di cliccare le risposte.
-- Corretta visualizzazione dei vincitori.
-- Corretta assegnazione dei punti.
-- Nuova partita nella stessa stanza.
+- [x] Selezione di una risposta vincente.
+- [x] Selezione di più risposte vincenti.
+- [x] Deselezione locale delle risposte selezionate.
+- [x] Solo il player autorizzato può inviare la selezione al server.
+- [x] Corretta visualizzazione dei vincitori e dei pareggi.
+- [x] Corretta assegnazione e persistenza dei punti.
+- [x] Nuova partita nella stessa stanza.
 
-### Sottotask 10.4 – Test del deploy
+### Sottotask 10.4 – Test del deploy [ ]
 
 Verifica il comportamento nell'ambiente online, non soltanto in locale.
 
-Controlla:
+Da verificare su Vercel e Render:
 
-- Connessione tra frontend Vercel e server Render.
-- Riconnessione Socket.IO.
-- Recupero dello stato della stanza.
-- Persistenza dei dati.
-- Gestione degli errori.
-- Avvio di una nuova partita dopo una partita conclusa.
+- [ ] Connessione tra frontend Vercel e server Render.
+- [ ] Riconnessione Socket.IO.
+- [ ] Recupero dello stato della stanza.
+- [ ] Persistenza dei dati.
+- [ ] Gestione degli errori.
+- [ ] Avvio di una nuova partita dopo una partita conclusa.
 
 Non considerare risolto il problema delle stanze finché non è stato verificato anche nell'ambiente di deploy.
+
+### Esito verifiche Task 10
+
+- Verifica locale completa: `npm test` passa con 15 test room/HTTP e 37 realtime; typecheck app/server, lint, build production e `git diff --check` passano.
+- Gli E2E PostgreSQL/Socket.IO coprono Classica, Situazioni Assurde con 3 e 4 giocatori, privacy risposte/voti, pareggi, scoring, reconnect/replay e rifiuto di modifiche settings dopo lo start.
+- La verifica online resta aperta: non è stata eseguita una sessione di test sul deploy Vercel/Render. Bluff, Chi tra noi?, Personaggio segreto e Caos Mode restano da testare dopo l'implementazione del gameplay.
 
 ---
 

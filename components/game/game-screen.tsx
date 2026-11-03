@@ -115,11 +115,14 @@ function GameScreen({ code }: { code: string }) {
 
     const phase = view.currentRound.phase
     const isAbsurdMode = view.mode === "absurd_situations"
+    const isBluffMode = view.mode === "bluff"
+    const isWhoAmongUsMode = view.mode === "who_among_us"
     const showAnswerForm =
         !view.currentRound.hasSubmittedAnswer &&
         (phase === "protagonist_answer"
             ? isProtagonist
-            : phase === "players_answer" && (isAbsurdMode || !isProtagonist))
+            : phase === "players_answer" &&
+            (isAbsurdMode || isBluffMode || !isProtagonist))
     const showWaiting =
         (phase === "protagonist_answer" && !isProtagonist) ||
         (phase === "players_answer" && !showAnswerForm)
@@ -159,6 +162,7 @@ function GameScreen({ code }: { code: string }) {
                             key={`${view.currentRound.number}-${playerId}`}
                             isProtagonist={isProtagonist}
                             isAbsurdMode={isAbsurdMode}
+                            isBluffMode={isBluffMode}
                             isSubmitting={game.isSubmittingAnswer}
                             onSubmit={game.submitAnswer}
                         />
@@ -171,7 +175,7 @@ function GameScreen({ code }: { code: string }) {
                             view={view}
                             canSelect={
                                 phase === "protagonist_selection" &&
-                                (view.mode === "absurd_situations"
+                                (isAbsurdMode || isBluffMode || isWhoAmongUsMode
                                     ? !view.currentRound.hasSubmittedVote &&
                                     view.currentRound.answers.some(
                                         (answer) =>

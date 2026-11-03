@@ -95,6 +95,7 @@ describe("game completion summary", () => {
         assert.equal(summary.votesCast, 3)
         assert.equal(summary.winningVotes, 3)
         assert.equal(summary.winningAnswers, 3)
+        assert.equal(summary.correctVotes, 0)
         assert.equal(summary.originalAnswersGuessedExactly, 2)
         assert.equal(summary.exactGuessPercentage, 67)
         assert.deepEqual(summary.recognitions, [
@@ -122,10 +123,61 @@ describe("game completion summary", () => {
                 votesCast: 0,
                 winningVotes: 0,
                 winningAnswers: 0,
+                correctVotes: 0,
                 originalAnswersGuessedExactly: 0,
                 exactGuessPercentage: 0,
                 recognitions: [],
             }
         )
+    })
+
+    it("summarizes Bluff votes without classic protagonist statistics", () => {
+        const summary = buildGameSummary({
+            mode: "bluff",
+            players,
+            rounds: [{ id: "br1", protagonistId: "p1" }],
+            answers: [
+                {
+                    id: "truth",
+                    roundId: "br1",
+                    playerId: null,
+                    content: "Giove",
+                    isOriginalAnswer: true,
+                },
+                {
+                    id: "fake1",
+                    roundId: "br1",
+                    playerId: "p2",
+                    content: "Saturno",
+                    isOriginalAnswer: false,
+                },
+                {
+                    id: "fake2",
+                    roundId: "br1",
+                    playerId: "p3",
+                    content: "Nettuno",
+                    isOriginalAnswer: false,
+                },
+            ],
+            votes: [
+                { roundId: "br1", selectedAnswerId: "truth" },
+                { roundId: "br1", selectedAnswerId: "truth" },
+                { roundId: "br1", selectedAnswerId: "fake1" },
+            ],
+        })
+
+        assert.equal(summary.answersSubmitted, 2)
+        assert.equal(summary.votesCast, 3)
+        assert.equal(summary.correctVotes, 2)
+        assert.equal(summary.originalAnswersGuessedExactly, 0)
+        assert.equal(summary.exactGuessPercentage, 0)
+        assert.deepEqual(summary.recognitions, [
+            {
+                title: "Bluff più convincente",
+                playerId: "p2",
+                nickname: "Leo",
+                detail: "1 voto al bluff",
+            },
+        ])
     })
 })

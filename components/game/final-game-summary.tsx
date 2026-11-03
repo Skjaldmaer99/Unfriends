@@ -131,11 +131,19 @@ function FinalGameSummary({
                         <p className="text-xs font-bold text-muted-foreground uppercase">
                             {view.mode === "absurd_situations"
                                 ? "Voti alle risposte più votate"
-                                : "Indovinate esatte"}
+                                : view.mode === "who_among_us"
+                                    ? "Voti ai più votati"
+                                    : view.mode === "bluff"
+                                        ? "Voti alla risposta vera"
+                                        : "Indovinate esatte"}
                         </p>
                         <p className="mt-1 font-heading text-2xl font-extrabold">
                             {view.mode === "absurd_situations" ? (
                                 <>{summary.winningVotes} / {summary.votesCast}</>
+                            ) : view.mode === "who_among_us" ? (
+                                <>{summary.winningVotes} / {summary.votesCast}</>
+                            ) : view.mode === "bluff" ? (
+                                <>{summary.correctVotes} / {summary.votesCast}</>
                             ) : (
                                 <>
                                     {summary.originalAnswersGuessedExactly}{" "}

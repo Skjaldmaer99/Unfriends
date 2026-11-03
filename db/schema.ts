@@ -56,6 +56,7 @@ export const roundStatusEnum = pgEnum("round_status", [
 
 const defaultGameSettings: GameSettings = {
     mode: "classic",
+    scoringEnabled: true,
     roundsPerPlayer: 1,
     answerTimeLimitSeconds: 60,
     selectionTimeLimitSeconds: 30,
@@ -306,6 +307,9 @@ export const rounds = pgTable(
         roomId: uuid("room_id")
             .notNull()
             .references(() => rooms.id, { onDelete: "cascade" }),
+        bluffQuestionId: uuid("bluff_question_id").references(() => bluffQuestions.id, {
+            onDelete: "restrict",
+        }),
         questionId: uuid("question_id")
             .references(() => questions.id, { onDelete: "restrict" }),
         gamePromptId: uuid("game_prompt_id").references(() => gamePrompts.id, {
@@ -338,7 +342,7 @@ export const rounds = pgTable(
         check("rounds_number_positive_check", sql`${table.roundNumber} > 0`),
         check(
             "rounds_question_source_check",
-            sql`(${table.questionId} is not null and ${table.gamePromptId} is null) or (${table.questionId} is null and ${table.gamePromptId} is not null)`
+            sql`(${table.questionId} is not null and ${table.gamePromptId} is null and ${table.bluffQuestionId} is null) or (${table.questionId} is null and ${table.gamePromptId} is not null and ${table.bluffQuestionId} is null) or (${table.questionId} is null and ${table.gamePromptId} is null and ${table.bluffQuestionId} is not null)`
         ),
     ]
 )
@@ -350,9 +354,7 @@ export const answers = pgTable(
         roundId: uuid("round_id")
             .notNull()
             .references(() => rounds.id, { onDelete: "cascade" }),
-        playerId: uuid("player_id")
-            .notNull()
-            .references(() => players.id, { onDelete: "restrict" }),
+        playerId: uuid("player_id").references(() => players.id, { onDelete: "restrict" }),
         content: varchar("content", { length: 240 }).notNull(),
         isOriginalAnswer: boolean("is_original_answer").notNull().default(false),
         createdAt: timestamp("created_at", { withTimezone: true })

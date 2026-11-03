@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 interface AnswerFormProps {
     isProtagonist: boolean
     isAbsurdMode: boolean
+    isBluffMode: boolean
     isSubmitting: boolean
     onSubmit: (answer: string) => Promise<void>
 }
@@ -17,6 +18,7 @@ const MAX_ANSWER_LENGTH = 240
 function AnswerForm({
     isProtagonist,
     isAbsurdMode,
+    isBluffMode,
     isSubmitting,
     onSubmit,
 }: AnswerFormProps) {
@@ -44,9 +46,11 @@ function AnswerForm({
             <label className="block space-y-2 text-sm font-semibold">
                 {isAbsurdMode
                     ? "La tua risposta"
-                    : isProtagonist
-                        ? "La tua risposta, solo per te"
-                        : "La tua ipotesi"}
+                    : isBluffMode
+                        ? "La tua risposta falsa"
+                        : isProtagonist
+                            ? "La tua risposta, solo per te"
+                            : "La tua ipotesi"}
                 <textarea
                     autoFocus
                     className="min-h-32 w-full resize-y rounded-lg border border-input bg-card px-3 py-3 text-base leading-relaxed transition outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25 disabled:opacity-60"
@@ -56,9 +60,11 @@ function AnswerForm({
                     placeholder={
                         isAbsurdMode
                             ? "Scrivi la risposta più assurda che ti viene in mente…"
-                            : isProtagonist
-                                ? "Scrivi quello che ti viene in mente…"
-                                : "Cosa risponderebbe il protagonista?"
+                            : isBluffMode
+                                ? "Scrivi una risposta falsa ma plausibile…"
+                                : isProtagonist
+                                    ? "Scrivi quello che ti viene in mente…"
+                                    : "Cosa risponderebbe il protagonista?"
                     }
                     value={answer}
                 />

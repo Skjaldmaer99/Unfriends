@@ -11,7 +11,7 @@ function WaitingPlayers({ view }: { view: PlayerGameView }) {
     const isProtagonist = protagonist?.isProtagonist ?? false
     const isWritingProtagonistAnswer = phase === "protagonist_answer"
     const title =
-        view.mode === "absurd_situations"
+        view.mode === "absurd_situations" || view.mode === "bluff"
             ? "La tua risposta è al sicuro."
             : isWritingProtagonistAnswer
                 ? `${protagonist?.nickname ?? "Il protagonista"} sta pensando alla sua risposta.`

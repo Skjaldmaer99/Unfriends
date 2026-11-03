@@ -7,6 +7,7 @@ import { and, asc, desc, eq, inArray, max } from "drizzle-orm"
 
 import {
     answers,
+    bluffQuestions,
     gameSessions,
     gamePrompts,
     players,
@@ -42,6 +43,7 @@ import {
 import {
     GameSettingsSchema,
     GameStateSnapshotSchema,
+    type BluffQuestion,
     type GameState,
 } from "./game/types.js"
 import { clientEventSchemas } from "./protocol.js"
@@ -702,6 +704,9 @@ function registerGameEvents(
             )
             const database = getDatabase()
             const isAbsurdVote = nextState.settings.mode === "absurd_situations"
+            const isBluffVote = nextState.settings.mode === "bluff"
+            const isWhoAmongUsVote = nextState.settings.mode === "who_among_us"
+            const isBallotVote = isAbsurdVote || isBluffVote || isWhoAmongUsVote
             const voteHasResolved = nextState.currentRound.phase === "round_result"
             const voteRows = databaseAnswerIds.map((selectedAnswerId) => ({
                 roundId: game.databaseRoundId,
@@ -709,7 +714,7 @@ function registerGameEvents(
                 selectedAnswerId: selectedAnswerId!,
             }))
 
-            if (isAbsurdVote && !voteHasResolved) {
+            if (isBallotVote && !voteHasResolved) {
                 await database.transaction(async (transaction) => {
                     await transaction.insert(votes).values(voteRows)
                     await transaction
@@ -722,14 +727,18 @@ function registerGameEvents(
             }
 
             game.state = nextState
-            if (isAbsurdVote && !voteHasResolved) {
+            if (isBallotVote && !voteHasResolved) {
                 io.to(game.roomCode).emit("round:vote-phase", {
                     voteCount: nextState.currentRound.votes.length,
-                    requiredVoteCount: nextState.players.filter((player) =>
-                        nextState.currentRound.answers.some(
-                            (answer) => answer.playerId !== player.id
-                        )
-                    ).length,
+                    requiredVoteCount: isBluffVote
+                        ? nextState.players.length
+                        : isWhoAmongUsVote
+                            ? nextState.players.length
+                            : nextState.players.filter((player) =>
+                                nextState.currentRound.answers.some(
+                                    (answer) => answer.playerId !== player.id
+                                )
+                            ).length,
                     deadlineAt: nextState.currentRound.deadlineAt,
                 })
                 await emitGameViews(io, game.roomCode, "game:state", nextState)
@@ -794,7 +803,7 @@ function registerGameEvents(
                 return { finished: true }
             }
 
-            const [databaseRound] = await database.transaction(
+            const { databaseRound, answerIds } = await database.transaction(
                 async (transaction) => {
                     const [insertedRound] = await transaction
                         .insert(rounds)
@@ -815,13 +824,35 @@ function registerGameEvents(
                         .update(gameSessions)
                         .set({ state: nextState, updatedAt: new Date() })
                         .where(eq(gameSessions.id, game.sessionId))
-                    return [insertedRound]
+                    const answerIds = new Map<string, string>()
+                    if (nextState.settings.mode === "who_among_us") {
+                        const insertedCandidates = await transaction
+                            .insert(answers)
+                            .values(
+                                nextState.currentRound.answers.map((answer) => ({
+                                    roundId: insertedRound.id,
+                                    playerId: answer.playerId!,
+                                    content: answer.content,
+                                    isOriginalAnswer: false,
+                                }))
+                            )
+                            .returning({ id: answers.id, playerId: answers.playerId })
+                        const databaseAnswerByPlayerId = new Map(
+                            insertedCandidates.map((answer) => [answer.playerId, answer.id])
+                        )
+                        for (const answer of nextState.currentRound.answers) {
+                            if (!answer.playerId) continue
+                            const databaseAnswerId = databaseAnswerByPlayerId.get(answer.playerId)
+                            if (databaseAnswerId) answerIds.set(answer.id, databaseAnswerId)
+                        }
+                    }
+                    return { databaseRound: insertedRound, answerIds }
                 }
             )
 
             game.state = nextState
             game.databaseRoundId = databaseRound.id
-            game.answerIds.clear()
+            game.answerIds = answerIds
             await emitGameViews(io, game.roomCode, "round:started", nextState)
             emitAnswerPhase(io, socket.data.roomCode, nextState)
             schedulePhaseTimeout(io, game)
@@ -911,6 +942,26 @@ async function startGame(
             )
         }
 
+        const bluffQuestionBank: BluffQuestion[] =
+            gameSettings.mode === "bluff"
+                ? await transaction
+                    .select({
+                        id: bluffQuestions.id,
+                        text: bluffQuestions.text,
+                        category: bluffQuestions.category,
+                        difficulty: bluffQuestions.difficulty,
+                        correctAnswer: bluffQuestions.correctAnswer,
+                        explanation: bluffQuestions.explanation,
+                        sourceUrl: bluffQuestions.sourceUrl,
+                    })
+                    .from(bluffQuestions)
+                    .where(
+                        and(
+                            eq(bluffQuestions.isActive, true),
+                            inArray(bluffQuestions.category, gameSettings.enabledCategories)
+                        )
+                    )
+                : []
         const questionBank =
             gameSettings.mode === "classic"
                 ? await transaction
@@ -927,25 +978,35 @@ async function startGame(
                             inArray(questions.category, gameSettings.enabledCategories)
                         )
                     )
-                : await transaction
-                    .select({
-                        id: gamePrompts.id,
-                        text: gamePrompts.text,
-                        category: gamePrompts.category,
-                        difficulty: gamePrompts.difficulty,
-                    })
-                    .from(gamePrompts)
-                    .where(
-                        and(
-                            eq(gamePrompts.isActive, true),
-                            eq(gamePrompts.mode, gameSettings.mode),
-                            inArray(gamePrompts.category, gameSettings.enabledCategories)
-                        )
+                : gameSettings.mode === "bluff"
+                    ? bluffQuestionBank.map(
+                        ({ id, text, category, difficulty }) => ({
+                            id,
+                            text,
+                            category,
+                            difficulty,
+                        })
                     )
+                    : await transaction
+                        .select({
+                            id: gamePrompts.id,
+                            text: gamePrompts.text,
+                            category: gamePrompts.category,
+                            difficulty: gamePrompts.difficulty,
+                        })
+                        .from(gamePrompts)
+                        .where(
+                            and(
+                                eq(gamePrompts.isActive, true),
+                                eq(gamePrompts.mode, gameSettings.mode),
+                                inArray(gamePrompts.category, gameSettings.enabledCategories)
+                            )
+                        )
 
         const state = createGame({
             players: roomPlayers,
             questions: questionBank,
+            bluffQuestions: bluffQuestionBank,
             settings: gameSettings,
         })
         const [lastRound] = await transaction
@@ -977,6 +1038,28 @@ async function startGame(
                 deadlineAt: new Date(state.currentRound.deadlineAt!),
             })
             .returning({ id: rounds.id })
+        const answerIds = new Map<string, string>()
+        if (state.settings.mode === "who_among_us") {
+            const insertedCandidates = await transaction
+                .insert(answers)
+                .values(
+                    state.currentRound.answers.map((answer) => ({
+                        roundId: databaseRound.id,
+                        playerId: answer.playerId!,
+                        content: answer.content,
+                        isOriginalAnswer: false,
+                    }))
+                )
+                .returning({ id: answers.id, playerId: answers.playerId })
+            const databaseAnswerByPlayerId = new Map(
+                insertedCandidates.map((answer) => [answer.playerId, answer.id])
+            )
+            for (const answer of state.currentRound.answers) {
+                if (!answer.playerId) continue
+                const databaseAnswerId = databaseAnswerByPlayerId.get(answer.playerId)
+                if (databaseAnswerId) answerIds.set(answer.id, databaseAnswerId)
+            }
+        }
         await transaction
             .update(rooms)
             .set({ status: "in_progress", updatedAt: new Date() })
@@ -990,7 +1073,7 @@ async function startGame(
             state,
             databaseRoundId: databaseRound.id,
             roundOffset,
-            answerIds: new Map(),
+            answerIds,
         }
     })
 }
@@ -998,10 +1081,18 @@ async function startGame(
 function getQuestionReference(
     mode: GameState["settings"]["mode"],
     questionId: string
-): { questionId: string | null; gamePromptId: string | null } {
-    return mode === "classic"
-        ? { questionId, gamePromptId: null }
-        : { questionId: null, gamePromptId: questionId }
+): {
+    questionId: string | null
+    gamePromptId: string | null
+    bluffQuestionId: string | null
+} {
+    if (mode === "classic") {
+        return { questionId, gamePromptId: null, bluffQuestionId: null }
+    }
+    if (mode === "bluff") {
+        return { questionId: null, gamePromptId: null, bluffQuestionId: questionId }
+    }
+    return { questionId: null, gamePromptId: questionId, bluffQuestionId: null }
 }
 
 async function restoreGameForRoom(
@@ -1051,6 +1142,7 @@ async function restoreGameForRoom(
                 protagonistId: rounds.protagonistId,
                 questionId: rounds.questionId,
                 gamePromptId: rounds.gamePromptId,
+                bluffQuestionId: rounds.bluffQuestionId,
             })
             .from(rounds)
             .where(
@@ -1066,9 +1158,15 @@ async function restoreGameForRoom(
             databaseRound.protagonistId !== state.currentRound.protagonistId ||
             (state.settings.mode === "classic"
                 ? databaseRound.questionId !== state.currentRound.question.id ||
-                databaseRound.gamePromptId !== null
-                : databaseRound.gamePromptId !== state.currentRound.question.id ||
-                databaseRound.questionId !== null) ||
+                databaseRound.gamePromptId !== null ||
+                databaseRound.bluffQuestionId !== null
+                : state.settings.mode === "bluff"
+                    ? databaseRound.bluffQuestionId !== state.currentRound.question.id ||
+                    databaseRound.questionId !== null ||
+                    databaseRound.gamePromptId !== null
+                    : databaseRound.gamePromptId !== state.currentRound.question.id ||
+                    databaseRound.questionId !== null ||
+                    databaseRound.bluffQuestionId !== null) ||
             databaseRound.status !== state.currentRound.phase
         ) {
             throw new Error("Persisted current round does not match the game state.")
@@ -1084,12 +1182,19 @@ async function restoreGameForRoom(
             .where(eq(answers.roundId, databaseRound.id))
         const databaseAnswerByPlayer = new Map(
             persistedAnswers
-                .filter((answer) => !answer.isOriginalAnswer)
+                .filter((answer) => !answer.isOriginalAnswer && answer.playerId !== null)
                 .map((answer) => [answer.playerId, answer.id])
+        )
+        const correctDatabaseAnswer = persistedAnswers.find(
+            (answer) => answer.isOriginalAnswer
         )
         const answerIds = new Map<string, string>()
         for (const answer of state.currentRound.answers) {
-            const databaseAnswerId = databaseAnswerByPlayer.get(answer.playerId)
+            const databaseAnswerId = answer.isCorrectAnswer
+                ? correctDatabaseAnswer?.id
+                : answer.playerId
+                    ? databaseAnswerByPlayer.get(answer.playerId)
+                    : undefined
             if (!databaseAnswerId) {
                 throw new Error("Persisted game answer is missing from the database.")
             }
@@ -1141,6 +1246,7 @@ async function buildPersistedGameSummary(
 
     if (roundIds.length === 0) {
         return buildGameSummary({
+            mode: game.state.settings.mode,
             players: game.state.players,
             rounds: [],
             answers: [],
@@ -1169,6 +1275,7 @@ async function buildPersistedGameSummary(
     ])
 
     return buildGameSummary({
+        mode: game.state.settings.mode,
         players: game.state.players,
         rounds: gameRounds,
         answers: gameAnswers,
@@ -1236,6 +1343,25 @@ function scheduleSelection(
             const selectionState = beginSelection(currentGame.state)
             void getDatabase()
                 .transaction(async (transaction) => {
+                    let correctOptionId: string | undefined
+                    if (selectionState.settings.mode === "bluff") {
+                        const correctOption = selectionState.currentRound.answers.find(
+                            (answer) => answer.isCorrectAnswer
+                        )
+                        if (!correctOption) {
+                            throw new Error("Bluff correct option is missing.")
+                        }
+                        const [persistedCorrectOption] = await transaction
+                            .insert(answers)
+                            .values({
+                                roundId: currentGame.databaseRoundId,
+                                playerId: null,
+                                content: correctOption.content,
+                                isOriginalAnswer: true,
+                            })
+                            .returning({ id: answers.id })
+                        correctOptionId = persistedCorrectOption.id
+                    }
                     await transaction
                         .update(rounds)
                         .set({
@@ -1247,9 +1373,20 @@ function scheduleSelection(
                         .update(gameSessions)
                         .set({ state: selectionState, updatedAt: new Date() })
                         .where(eq(gameSessions.id, currentGame.sessionId))
+                    return correctOptionId
                 })
-                .then(() => {
+                .then((correctOptionId) => {
+                    if (
+                        correctOptionId &&
+                        selectionState.currentRound.bluffCorrectAnswerId
+                    ) {
+                        currentGame.answerIds.set(
+                            selectionState.currentRound.bluffCorrectAnswerId,
+                            correctOptionId
+                        )
+                    }
                     currentGame.state = selectionState
+                    void emitGameViews(io, currentGame.roomCode, "game:state", selectionState)
                     emitAnswerPhase(io, currentGame.roomCode, selectionState)
                     schedulePhaseTimeout(io, currentGame)
                 })
@@ -1385,6 +1522,15 @@ function emitAnswerPhase(
     roomCode: string,
     state: GameState
 ): void {
+    if (state.settings.mode === "who_among_us") {
+        io.to(roomCode).emit("round:vote-phase", {
+            voteCount: state.currentRound.votes.length,
+            requiredVoteCount: state.players.length,
+            deadlineAt: state.currentRound.deadlineAt,
+        })
+        return
+    }
+
     if (
         state.currentRound.phase !== "protagonist_answer" &&
         state.currentRound.phase !== "players_answer" &&
@@ -1397,7 +1543,7 @@ function emitAnswerPhase(
         phase: state.currentRound.phase,
         answerCount: state.currentRound.answers.length,
         requiredAnswerCount:
-            state.settings.mode === "absurd_situations"
+            state.settings.mode === "absurd_situations" || state.settings.mode === "bluff"
                 ? state.players.length
                 : state.players.length - 1,
         deadlineAt: state.currentRound.deadlineAt,
