@@ -6,7 +6,6 @@ services:
     buildCommand: npm ci --include=dev && npm run typecheck --workspace @unfriends/realtime-server
     startCommand: npm run start --workspace @unfriends/realtime-server
     healthCheckPath: /healthz
-    maxShutdownDelaySeconds: 30
     envVars:
       - key: DATABASE_URL
         sync: false
